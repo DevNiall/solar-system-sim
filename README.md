@@ -2,6 +2,8 @@
 
 ![Guided flyby tour demo](assets/media/demo.gif)
 
+**[Live demo](https://devniall.github.io/solar-system-sim/)**
+
 A dependency-light, WebGL solar system visualizer built with [Three.js](https://threejs.org/) (loaded via CDN, no build step). Designed as an educational tool for high-school-level astronomy: explore the Sun and all eight planets, click on any body for real facts, and take a guided cinematic tour of the whole system.
 
 ## Running locally
