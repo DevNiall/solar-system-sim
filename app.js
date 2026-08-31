@@ -184,7 +184,11 @@
       v3.fromBufferAttribute(pos, i);
       const radial = (v3.length() - innerRadius) / (outerRadius - innerRadius);
       const angular = (Math.atan2(v3.y, v3.x) + Math.PI) / (Math.PI * 2);
-      uv.setXY(i, angular, radial);
+      // The ring texture's gradient runs along its width (U), with height (V)
+      // being angle-invariant, so U must track radial distance and V the
+      // angle — mapping it the other way makes the radial gradient repeat
+      // once per angular segment, producing a banded/striped look.
+      uv.setXY(i, radial, angular);
     }
     return geo;
   }
