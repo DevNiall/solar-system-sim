@@ -4,11 +4,33 @@
 // Visual scale fields (size, distance, speed) are DELIBERATELY compressed /
 // exaggerated for legibility — see the "About" panel in index.html.
 
+// Real diffuse texture maps (CC-BY 4.0, Solar System Scope) committed locally
+// under assets/textures/ so the app doesn't depend on a third-party image
+// host staying up. If a texture fails to load, materials fall back to solid
+// colors (see app.js loadTexture()).
+const TEXTURES = {
+  sun: "assets/textures/2k_sun.jpg",
+  mercury: "assets/textures/2k_mercury.jpg",
+  venus: "assets/textures/2k_venus_surface.jpg",
+  earthDay: "assets/textures/2k_earth_daymap.jpg",
+  earthClouds: "assets/textures/2k_earth_clouds.jpg",
+  earthSpecular: "assets/textures/2k_earth_specular_map.jpg",
+  mars: "assets/textures/2k_mars.jpg",
+  jupiter: "assets/textures/2k_jupiter.jpg",
+  saturn: "assets/textures/2k_saturn.jpg",
+  saturnRing: "assets/textures/2k_saturn_ring_alpha.png",
+  uranus: "assets/textures/2k_uranus.jpg",
+  neptune: "assets/textures/2k_neptune.jpg",
+  moon: "assets/textures/2k_moon.jpg",
+  starsMilkyWay: "assets/textures/2k_stars_milky_way.jpg",
+};
+
 const SUN = {
   key: "sun",
   name: "Sun",
   color: 0xffdd66,
   emissive: 0xffaa22,
+  texture: TEXTURES.sun,
   radius: 6.5, // visual units
   tagline: "The star at the center of it all.",
   stats: {
@@ -30,6 +52,7 @@ const PLANETS = [
     key: "mercury",
     name: "Mercury",
     color: 0x9c9186,
+    texture: TEXTURES.mercury,
     radius: 0.9,
     distance: 11,
     orbitSpeed: 4.15, // relative to Earth = 1 (real ratio, preserved ordering)
@@ -51,6 +74,7 @@ const PLANETS = [
     key: "venus",
     name: "Venus",
     color: 0xe8c27a,
+    texture: TEXTURES.venus,
     radius: 1.3,
     distance: 15,
     orbitSpeed: 1.62,
@@ -72,6 +96,9 @@ const PLANETS = [
     key: "earth",
     name: "Earth",
     color: 0x3a7bd5,
+    texture: TEXTURES.earthDay,
+    cloudsTexture: TEXTURES.earthClouds,
+    specularTexture: TEXTURES.earthSpecular,
     radius: 1.4,
     distance: 20,
     orbitSpeed: 1.0,
@@ -91,6 +118,7 @@ const PLANETS = [
     moon: {
       name: "Moon",
       color: 0xbfbfbf,
+      texture: TEXTURES.moon,
       radius: 0.35,
       distance: 2.4,
       orbitSpeed: 12,
@@ -100,6 +128,7 @@ const PLANETS = [
     key: "mars",
     name: "Mars",
     color: 0xc1440e,
+    texture: TEXTURES.mars,
     radius: 1.0,
     distance: 26,
     orbitSpeed: 0.53,
@@ -121,6 +150,7 @@ const PLANETS = [
     key: "jupiter",
     name: "Jupiter",
     color: 0xd8ac7c,
+    texture: TEXTURES.jupiter,
     radius: 3.8,
     distance: 36,
     orbitSpeed: 0.084,
@@ -142,6 +172,7 @@ const PLANETS = [
     key: "saturn",
     name: "Saturn",
     color: 0xe3cf9c,
+    texture: TEXTURES.saturn,
     radius: 3.3,
     distance: 46,
     orbitSpeed: 0.034,
@@ -158,12 +189,13 @@ const PLANETS = [
       "Saturn is the least dense planet — it would float in water if you had a bathtub big enough.",
       "Titan, its largest moon, has thick atmosphere and lakes of liquid methane.",
     ],
-    rings: { innerRadius: 4.2, outerRadius: 7.2, color: 0xc9b98a },
+    rings: { innerRadius: 4.2, outerRadius: 7.2, color: 0xc9b98a, texture: TEXTURES.saturnRing },
   },
   {
     key: "uranus",
     name: "Uranus",
     color: 0x9fe3e8,
+    texture: TEXTURES.uranus,
     radius: 2.2,
     distance: 55,
     orbitSpeed: 0.012,
@@ -185,6 +217,7 @@ const PLANETS = [
     key: "neptune",
     name: "Neptune",
     color: 0x3a5fcd,
+    texture: TEXTURES.neptune,
     radius: 2.1,
     distance: 64,
     orbitSpeed: 0.006,

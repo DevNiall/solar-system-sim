@@ -12,6 +12,7 @@
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.insertBefore(renderer.domElement, container.firstChild);
 
   const scene = new THREE.Scene();
@@ -23,6 +24,31 @@
     2000
   );
   camera.position.set(0, 40, 90);
+
+  // ---------------------------------------------------------------------
+  // Texture loading helper (graceful fallback to solid colors on failure)
+  // ---------------------------------------------------------------------
+  const textureLoader = new THREE.TextureLoader();
+
+  // Applies a texture asynchronously to a material property (e.g. "map").
+  // The material's base `color` is set by the caller beforehand, so if the
+  // texture fails to load (404, offline, unsupported format, etc.) the mesh
+  // simply keeps showing its solid fallback color — no crash, no broken look.
+  function applyTexture(url, material, mapKey, colorManaged) {
+    if (!url) return;
+    textureLoader.load(
+      url,
+      (tex) => {
+        if (colorManaged && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+        material[mapKey] = tex;
+        material.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        console.warn("[textures] failed to load, falling back to solid color:", url);
+      }
+    );
+  }
 
   // ---------------------------------------------------------------------
   // Starfield background
@@ -51,6 +77,21 @@
   }
   buildStarfield();
 
+  // Milky way skybox: a large inverted sphere textured with a real starfield
+  // photo, sitting behind the procedural point-star field for extra depth.
+  // Falls back to plain black (already the page background) if it fails.
+  function buildSkybox() {
+    if (!TEXTURES.starsMilkyWay) return;
+    const geo = new THREE.SphereGeometry(900, 48, 32);
+    const mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x666666 });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    applyTexture(TEXTURES.starsMilkyWay, mat, "map", true);
+    // once textured, let it show at full brightness rather than tinted
+    mat.color.set(0xffffff);
+  }
+  buildSkybox();
+
   // ---------------------------------------------------------------------
   // Lighting
   // ---------------------------------------------------------------------
@@ -62,7 +103,7 @@
   scene.add(sunLight);
 
   // ---------------------------------------------------------------------
-  // Sun
+  // Sun (textured, with a glow sprite standing in for bloom postprocessing)
   // ---------------------------------------------------------------------
   const sunGeo = new THREE.SphereGeometry(SUN.radius, 48, 48);
   const sunMat = new THREE.MeshBasicMaterial({ color: SUN.color });
@@ -70,8 +111,9 @@
   sunMesh.userData.isSelectable = true;
   sunMesh.userData.dataKey = "sun";
   scene.add(sunMesh);
+  applyTexture(SUN.texture, sunMat, "map", true);
 
-  // subtle glow via a larger transparent sphere
+  // Soft volumetric-looking corona via a backside sphere...
   const glowGeo = new THREE.SphereGeometry(SUN.radius * 1.35, 32, 32);
   const glowMat = new THREE.MeshBasicMaterial({
     color: SUN.emissive,
@@ -80,6 +122,39 @@
     side: THREE.BackSide,
   });
   scene.add(new THREE.Mesh(glowGeo, glowMat));
+
+  // ...plus a camera-facing radial-gradient sprite for a bloom-like glow.
+  // This avoids needing the ES-module-only three.js postprocessing/EffectComposer
+  // stack, keeping the app a plain <script> / no-build-step setup.
+  function buildGlowSprite() {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createRadialGradient(
+      size / 2, size / 2, 0,
+      size / 2, size / 2, size / 2
+    );
+    gradient.addColorStop(0, "rgba(255,240,200,0.9)");
+    gradient.addColorStop(0.25, "rgba(255,210,120,0.55)");
+    gradient.addColorStop(0.6, "rgba(255,170,60,0.18)");
+    gradient.addColorStop(1, "rgba(255,140,40,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const sprite = new THREE.Sprite(mat);
+    const scale = SUN.radius * 6;
+    sprite.scale.set(scale, scale, 1);
+    scene.add(sprite);
+  }
+  buildGlowSprite();
 
   // ---------------------------------------------------------------------
   // Orbit ring helper
@@ -97,6 +172,24 @@
   }
 
   // ---------------------------------------------------------------------
+  // Saturn ring geometry with correct radial/angular UVs so the real ring
+  // texture (a thin radial strip with transparency) maps cleanly.
+  // ---------------------------------------------------------------------
+  function buildRingGeometry(innerRadius, outerRadius) {
+    const geo = new THREE.RingGeometry(innerRadius, outerRadius, 128, 1);
+    const pos = geo.attributes.position;
+    const uv = geo.attributes.uv;
+    const v3 = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v3.fromBufferAttribute(pos, i);
+      const radial = (v3.length() - innerRadius) / (outerRadius - innerRadius);
+      const angular = (Math.atan2(v3.y, v3.x) + Math.PI) / (Math.PI * 2);
+      uv.setXY(i, angular, radial);
+    }
+    return geo;
+  }
+
+  // ---------------------------------------------------------------------
   // Build planets
   // ---------------------------------------------------------------------
   const planetObjects = []; // { data, pivot, mesh, angle }
@@ -107,13 +200,47 @@
     const pivot = new THREE.Object3D();
     scene.add(pivot);
 
-    const geo = new THREE.SphereGeometry(p.radius, 40, 40);
-    const mat = new THREE.MeshStandardMaterial({
-      color: p.color,
-      roughness: 0.85,
-      metalness: 0.05,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const geo = new THREE.SphereGeometry(p.radius, 48, 48);
+    let mesh;
+
+    if (p.key === "earth") {
+      // Earth gets a Phong material so we can use a real specular map
+      // (oceans reflect more light than land) in addition to its day texture.
+      const mat = new THREE.MeshPhongMaterial({
+        color: p.color,
+        shininess: 12,
+        specular: new THREE.Color(0x333333),
+      });
+      mesh = new THREE.Mesh(geo, mat);
+      applyTexture(p.texture, mat, "map", true);
+      applyTexture(p.specularTexture, mat, "specularMap", false);
+
+      // Cloud layer: a slightly larger sphere. The clouds texture is bright
+      // clouds on a near-black background; additive blending makes the black
+      // background contribute nothing while clouds glow softly on top.
+      if (p.cloudsTexture) {
+        const cloudGeo = new THREE.SphereGeometry(p.radius * 1.015, 48, 48);
+        const cloudMat = new THREE.MeshLambertMaterial({
+          transparent: true,
+          opacity: 0.55,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+        applyTexture(p.cloudsTexture, cloudMat, "map", true);
+        mesh.add(cloudMesh);
+        mesh.userData.cloudMesh = cloudMesh;
+      }
+    } else {
+      const mat = new THREE.MeshStandardMaterial({
+        color: p.color,
+        roughness: 0.85,
+        metalness: 0.05,
+      });
+      mesh = new THREE.Mesh(geo, mat);
+      applyTexture(p.texture, mat, "map", true);
+    }
+
     mesh.position.set(p.distance, 0, 0);
     mesh.userData.isSelectable = true;
     mesh.userData.dataKey = p.key;
@@ -121,21 +248,15 @@
 
     // Saturn's rings
     if (p.rings) {
-      const ringGeo = new THREE.RingGeometry(p.rings.innerRadius, p.rings.outerRadius, 64);
-      // RingGeometry UVs assume XY plane; rotate to lie flat, and fix radial UV mapping for a nicer look
-      const pos = ringGeo.attributes.position;
-      const v3 = new THREE.Vector3();
-      for (let i = 0; i < pos.count; i++) {
-        v3.fromBufferAttribute(pos, i);
-        ringGeo.attributes.uv.setXY(i, v3.length() < (p.rings.innerRadius + p.rings.outerRadius) / 2 ? 0 : 1, 1);
-      }
+      const ringGeo = buildRingGeometry(p.rings.innerRadius, p.rings.outerRadius);
       const ringMat = new THREE.MeshStandardMaterial({
-        color: p.rings.color,
+        color: p.rings.texture ? 0xffffff : p.rings.color,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.75,
+        opacity: p.rings.texture ? 1 : 0.75,
         roughness: 0.9,
       });
+      if (p.rings.texture) applyTexture(p.rings.texture, ringMat, "map", true);
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.rotation.x = Math.PI / 2.2;
       mesh.add(ringMesh);
@@ -147,11 +268,13 @@
     if (p.moon) {
       moonPivot = new THREE.Object3D();
       mesh.add(moonPivot);
-      const mGeo = new THREE.SphereGeometry(p.moon.radius, 24, 24);
+      const mGeo = new THREE.SphereGeometry(p.moon.radius, 32, 32);
       const mMat = new THREE.MeshStandardMaterial({ color: p.moon.color, roughness: 0.9 });
       moonMesh = new THREE.Mesh(mGeo, mMat);
       moonMesh.position.set(p.moon.distance, 0, 0);
+      moonMesh.userData.isSelectable = false;
       moonPivot.add(moonMesh);
+      applyTexture(p.moon.texture, mMat, "map", true);
     }
 
     planetObjects.push({
@@ -181,7 +304,13 @@
   const rotateSpeed = 0.006;
   const panSpeed = 0.06;
   const zoomSpeed = 1.0;
-  let userIsControlling = false; // becomes true once user interacts, used to pause auto camera behaviors
+
+  // When set, the main loop re-centers controlsTarget on this function's
+  // return value every frame — used so the camera can stay locked onto a
+  // moving planet (during tour flights AND while dwelling at a tour stop,
+  // since planets keep orbiting the whole time). Cleared whenever the user
+  // manually takes control of the camera.
+  let liveFollowFn = null;
 
   function updateCameraFromSpherical() {
     camSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, camSpherical.phi));
@@ -191,6 +320,10 @@
     camera.lookAt(controlsTarget);
   }
   updateCameraFromSpherical();
+
+  function clearFollow() {
+    liveFollowFn = null;
+  }
 
   renderer.domElement.addEventListener("mousedown", (e) => {
     if (e.button === 0) isDragging = true;
@@ -209,11 +342,13 @@
     lastY = e.clientY;
     if (isDragging) {
       exitTourToFreeIfNeeded();
+      clearFollow();
       camSpherical.theta -= dx * rotateSpeed;
       camSpherical.phi -= dy * rotateSpeed;
       updateCameraFromSpherical();
     } else if (isPanning) {
       exitTourToFreeIfNeeded();
+      clearFollow();
       const panOffset = new THREE.Vector3();
       const cameraDir = new THREE.Vector3();
       camera.getWorldDirection(cameraDir);
@@ -231,6 +366,8 @@
     (e) => {
       e.preventDefault();
       exitTourToFreeIfNeeded();
+      // zooming stays compatible with an active follow (doesn't cancel it),
+      // since the radius is independent of what point we're centered on
       camSpherical.radius += e.deltaY * zoomSpeed * 0.05 * (camSpherical.radius / 40 + 0.5);
       updateCameraFromSpherical();
     },
@@ -342,7 +479,11 @@
   // ---------------------------------------------------------------------
   // Camera fly-to animation helper
   // ---------------------------------------------------------------------
-  let cameraAnim = null; // { fromPos, toPos, fromTarget, toTarget, fromSph, toSph, start, duration, onDone }
+  // cameraAnim: { fromTarget, getTarget, fromSph, toSph, start, duration, onDone }
+  // `getTarget` is a function re-evaluated every frame so a moving planet's
+  // LIVE position is what we converge on — not a stale snapshot taken when
+  // the flight started (which would drift as the planet keeps orbiting).
+  let cameraAnim = null;
 
   function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -357,17 +498,21 @@
     return worldPos;
   }
 
-  function flyCameraTo(targetPos, distance, duration, onDone) {
+  // getTargetFn: () => THREE.Vector3, evaluated live every frame (both during
+  // the flight and afterwards, via liveFollowFn) so the camera tracks a
+  // moving target correctly instead of a fixed point captured at flight-start.
+  function flyCameraTo(getTargetFn, distance, duration, onDone) {
     const fromTarget = controlsTarget.clone();
-    const toTarget = targetPos.clone();
 
     // Compute a nice viewing offset (keep current azimuth/elevation direction, but new radius)
     const dir = new THREE.Vector3().setFromSpherical(camSpherical).normalize();
     const desiredSph = new THREE.Spherical().setFromVector3(dir.clone().multiplyScalar(distance));
 
+    liveFollowFn = getTargetFn;
+
     cameraAnim = {
       fromTarget,
-      toTarget,
+      getTarget: getTargetFn,
       fromSph: camSpherical.clone(),
       toSph: desiredSph,
       start: performance.now(),
@@ -378,10 +523,9 @@
 
   function flyCameraToKey(key, durationScale) {
     const data = getDataByKey(key);
-    const worldPos = getWorldPositionForKey(key);
     const radius = data.radius || 3;
     const viewDist = Math.max(radius * 5, 8);
-    flyCameraTo(worldPos, viewDist, 1800 * (durationScale || 1));
+    flyCameraTo(() => getWorldPositionForKey(key), viewDist, 1800 * (durationScale || 1));
   }
 
   function updateCameraAnim(now) {
@@ -389,7 +533,10 @@
     const t = Math.min(1, (now - cameraAnim.start) / cameraAnim.duration);
     const e = easeInOutCubic(t);
 
-    controlsTarget.lerpVectors(cameraAnim.fromTarget, cameraAnim.toTarget, e);
+    // Re-evaluate the live target every frame so fast-moving planets (e.g.
+    // Mercury) don't cause the camera to converge on a stale position.
+    const liveTarget = cameraAnim.getTarget();
+    controlsTarget.lerpVectors(cameraAnim.fromTarget, liveTarget, e);
 
     camSpherical.radius = THREE.MathUtils.lerp(cameraAnim.fromSph.radius, cameraAnim.toSph.radius, e);
     camSpherical.theta = THREE.MathUtils.lerp(cameraAnim.fromSph.theta, cameraAnim.toSph.theta, e);
@@ -448,6 +595,7 @@
     tourState.paused = false;
     clearTimeout(tourState.dwellTimer);
     tourBar.classList.remove("visible");
+    clearFollow();
     if (showReset !== false) {
       // no-op, kept for symmetry
     }
@@ -468,14 +616,17 @@
 
     if (key === "__end__") {
       hideInfoPanel();
-      // Pull back to a wide overview shot
-      flyCameraTo(new THREE.Vector3(0, 0, 0), 95, 2200, () => {
+      // Pull back to a wide overview shot (fixed point, nothing to track)
+      flyCameraTo(() => new THREE.Vector3(0, 0, 0), 95, 2200, () => {
         armDwell();
       });
       return;
     }
 
     hideInfoPanel();
+    // flyCameraToKey wires up liveFollowFn to continuously track this body's
+    // live (orbiting) position — both during the flight and, since we never
+    // clear it below, for the whole dwell period that follows.
     flyCameraToKey(key, 1.3);
     // Show facts partway through the flight for a natural reveal, then dwell
     const revealDelay = 900;
@@ -550,7 +701,8 @@
   resetBtn.addEventListener("click", () => {
     stopTour();
     hideInfoPanel();
-    flyCameraTo(new THREE.Vector3(0, 0, 0), 90, 1200);
+    clearFollow();
+    flyCameraTo(() => new THREE.Vector3(0, 0, 0), 90, 1200);
   });
 
   // ---------------------------------------------------------------------
@@ -589,6 +741,9 @@
       obj.angle += obj.data.orbitSpeed * ORBIT_TIME_SCALE * dt;
       obj.pivot.rotation.y = obj.angle;
       obj.mesh.rotation.y += (obj.data.rotationSpeed || 0.3) * dt;
+      if (obj.mesh.userData.cloudMesh) {
+        obj.mesh.userData.cloudMesh.rotation.y += 0.02 * dt;
+      }
       if (obj.moonPivot) {
         obj.moonPivot.rotation.y += (obj.data.moon.orbitSpeed || 5) * ORBIT_TIME_SCALE * dt;
       }
@@ -597,6 +752,15 @@
     sunMesh.rotation.y += 0.05 * dt;
 
     updateCameraAnim(now);
+
+    // Keep the camera locked onto whatever we're following (a tour stop's
+    // planet, or a manually-clicked planet) even when no flight animation is
+    // in progress — this is what keeps the view centered on a moving planet
+    // for the entire dwell/pause duration at a tour stop.
+    if (liveFollowFn && !cameraAnim) {
+      controlsTarget.copy(liveFollowFn());
+      updateCameraFromSpherical();
+    }
 
     renderer.render(scene, camera);
   }
