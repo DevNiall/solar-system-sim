@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Solar System Simulator</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000005;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e8ecf7;
+  }
+  #app { position: relative; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+
+  #topbar {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #title {
+    pointer-events: auto;
+    background: rgba(10, 12, 24, 0.55);
+    backdrop-filter: blur(6px);
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(120, 150, 255, 0.25);
+  }
+  #title h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  #title p {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: #9aa4c7;
+    max-width: 320px;
+    line-height: 1.4;
+  }
+
+  #controls {
+    pointer-events: auto;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 50vw;
+  }
+
+  button.pill {
+    pointer-events: auto;
+    background: rgba(30, 40, 70, 0.75);
+    border: 1px solid rgba(120, 150, 255, 0.35);
+    color: #e8ecf7;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+    white-space: nowrap;
+  }
+  button.pill:hover { background: rgba(70, 100, 190, 0.85); transform: translateY(-1px); }
+  button.pill:active { transform: translateY(0px); }
+  button.pill.primary { background: rgba(255, 175, 60, 0.85); color: #241a04; border-color: rgba(255,200,120,0.6); font-weight: 600;}
+  button.pill.primary:hover { background: rgba(255, 190, 90, 0.95); }
+  button.pill:disabled { opacity: 0.35; cursor: default; }
+
+  #infoPanel {
+    position: absolute;
+    top: 90px;
+    right: 14px;
+    width: 300px;
+    max-width: 42vw;
+    background: rgba(10, 12, 24, 0.72);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(120, 150, 255, 0.3);
+    border-radius: 12px;
+    padding: 16px 18px;
+    z-index: 10;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+    pointer-events: none;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  #infoPanel.visible {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #infoPanel h2 {
+    margin: 0 0 2px;
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #infoPanel .swatch {
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  #infoPanel .tagline {
+    margin: 0 0 12px;
+    font-size: 11.5px;
+    color: #9aa4c7;
+    font-style: italic;
+  }
+  #infoPanel dl {
+    margin: 0 0 12px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    font-size: 12.5px;
+  }
+  #infoPanel dt { color: #8b95bd; }
+  #infoPanel dd { margin: 0; }
+  #infoPanel .facts {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #d7dcf2;
+  }
+  #infoPanel .facts li { margin-bottom: 6px; }
+  #infoPanel .closeBtn {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #9aa4c7;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  #infoPanel .closeBtn:hover { color: #fff; }
+
+  #tourBar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(140%);
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(10, 12, 24, 0.72);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(120, 150, 255, 0.3);
+    border-radius: 999px;
+    padding: 10px 16px;
+    z-index: 10;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+    pointer-events: none;
+  }
+  #tourBar.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #tourBar .stop-label {
+    font-size: 12.5px;
+    color: #cfd6f0;
+    min-width: 130px;
+    text-align: center;
+  }
+
+  #aboutBtn {
+    position: absolute;
+    bottom: 20px;
+    left: 14px;
+    z-index: 10;
+  }
+
+  #aboutModal {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 3, 10, 0.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+  }
+  #aboutModal.visible { display: flex; }
+  #aboutModal .box {
+    background: #10131f;
+    border: 1px solid rgba(120, 150, 255, 0.3);
+    border-radius: 14px;
+    padding: 26px 30px;
+    max-width: 480px;
+    line-height: 1.55;
+    font-size: 13.5px;
+    color: #d7dcf2;
+    position: relative;
+  }
+  #aboutModal h2 { margin-top: 0; font-size: 18px; }
+  #aboutModal .closeBtn {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: #9aa4c7;
+    font-size: 20px;
+    cursor: pointer;
+  }
+  #aboutModal .closeBtn:hover { color: #fff; }
+
+  #loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000005;
+    z-index: 50;
+    font-size: 14px;
+    color: #9aa4c7;
+    letter-spacing: 0.05em;
+  }
+
+  #hint {
+    position: absolute;
+    bottom: 20px;
+    right: 14px;
+    font-size: 11px;
+    color: #6b7397;
+    z-index: 5;
+    text-align: right;
+    pointer-events: none;
+  }
+
+  @media (max-width: 720px) {
+    #infoPanel { width: 78vw; max-width: 78vw; top: 80px; }
+    #controls { max-width: 100vw; justify-content: flex-start; margin-top: 8px; }
+    #topbar { flex-direction: column; gap: 8px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="loading">Loading solar system…</div>
+
+  <div id="topbar">
+    <div id="title">
+      <h1>🪐 Solar System Simulator</h1>
+      <p>Sizes &amp; distances are compressed for legibility — not to scale. See "About" for details.</p>
+    </div>
+    <div id="controls">
+      <button class="pill primary" id="tourBtn">▶ Start Tour</button>
+      <button class="pill" id="resetBtn">Reset View</button>
+    </div>
+  </div>
+
+  <button class="pill" id="aboutBtn">ℹ About this simulation</button>
+
+  <div id="tourBar">
+    <button class="pill" id="tourPrev">⏮ Prev</button>
+    <button class="pill" id="tourPause">⏸ Pause</button>
+    <span class="stop-label" id="tourLabel">Sun</span>
+    <button class="pill" id="tourNext">Next ⏭</button>
+    <button class="pill" id="tourExit">✕ Exit Tour</button>
+  </div>
+
+  <div id="infoPanel">
+    <button class="closeBtn" id="infoCloseBtn">×</button>
+    <h2><span class="swatch" id="infoSwatch"></span><span id="infoName">—</span></h2>
+    <p class="tagline" id="infoTagline"></p>
+    <dl id="infoStats"></dl>
+    <ul class="facts" id="infoFacts"></ul>
+  </div>
+
+  <div id="hint">Drag to rotate · Scroll to zoom · Right-drag to pan · Click a planet for facts</div>
+
+  <div id="aboutModal">
+    <div class="box">
+      <button class="closeBtn" id="aboutCloseBtn">×</button>
+      <h2>About this simulation</h2>
+      <p>This is an educational, stylized model of the solar system built with Three.js. It is designed to teach real astronomy concepts — relative orbital speeds, planet ordering, and comparative facts — while remaining visually legible in a single viewport.</p>
+      <p><strong>What is NOT physically accurate:</strong></p>
+      <ul>
+        <li>Planet sizes are scaled up (especially the smaller ones) so they're visible at all — the Sun would otherwise dwarf every planet on screen.</li>
+        <li>Orbital distances use a compressed non-linear scale so Neptune isn't kilometers away from Mercury on your screen.</li>
+        <li>Orbital speeds preserve <em>relative</em> ordering (inner planets orbit faster than outer ones, matching Kepler's laws) but are sped up dramatically and not in true proportion.</li>
+        <li>Axial tilts, orbital inclinations, and moon systems (besides Earth's Moon) are simplified or omitted.</li>
+      </ul>
+      <p>Facts about diameters, day/year lengths, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of the visualization is exaggerated for teaching purposes.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="./data.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
