@@ -81,6 +81,20 @@
   button.pill.primary:hover { background: rgba(255, 190, 90, 0.95); }
   button.pill:disabled { opacity: 0.35; cursor: default; }
 
+  select.pill {
+    pointer-events: auto;
+    background: rgba(30, 40, 70, 0.75);
+    border: 1px solid rgba(120, 150, 255, 0.35);
+    color: #e8ecf7;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  select.pill:hover { background: rgba(70, 100, 190, 0.85); }
+  select.pill option { background: #10131f; color: #e8ecf7; }
+
   #infoPanel {
     position: absolute;
     top: 90px;
@@ -266,6 +280,16 @@
       <p>Sizes &amp; distances are compressed for legibility — not to scale. See "About" for details.</p>
     </div>
     <div id="controls">
+      <select class="pill" id="tourScope" title="Tour scope">
+        <option value="full" selected>Full Tour</option>
+        <option value="inner">Inner Planets</option>
+        <option value="outer">Outer Planets</option>
+      </select>
+      <select class="pill" id="tourSpeed" title="Tour pace">
+        <option value="relaxed">Relaxed</option>
+        <option value="normal" selected>Normal</option>
+        <option value="quick">Quick</option>
+      </select>
       <button class="pill primary" id="tourBtn">▶ Start Tour</button>
       <button class="pill" id="resetBtn">Reset View</button>
     </div>

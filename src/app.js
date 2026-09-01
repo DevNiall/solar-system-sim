@@ -574,8 +574,27 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
   const tourPauseBtn = document.getElementById("tourPause");
   const tourExitBtn = document.getElementById("tourExit");
   const resetBtn = document.getElementById("resetBtn");
+  const tourScopeSelect = document.getElementById("tourScope");
+  const tourSpeedSelect = document.getElementById("tourSpeed");
 
-  const tourStops = ["sun", ...PLANETS.map((p) => p.key), "__end__"];
+  // Tour scopes determine which bodies (besides the closing "__end__" stop)
+  // are visited. "full" is the original Sun -> all 8 planets sequence and
+  // stays the default so existing behavior is unchanged.
+  const TOUR_SCOPES = {
+    full: ["sun", ...PLANETS.map((p) => p.key)],
+    inner: ["mercury", "venus", "earth", "mars"],
+    outer: ["jupiter", "saturn", "uranus", "neptune"],
+  };
+
+  // Dwell duration (ms) per stop for each speed preset. "normal" matches the
+  // original hardcoded 4200ms duration.
+  const TOUR_SPEEDS = {
+    relaxed: 7000,
+    normal: 4200,
+    quick: 2400,
+  };
+
+  let tourStops = [...TOUR_SCOPES.full, "__end__"];
 
   const tourState = {
     active: false,
@@ -584,7 +603,7 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
     dwellTimer: null,
     dwellRemaining: 0,
     dwellStart: 0,
-    dwellDuration: 4200,
+    dwellDuration: TOUR_SPEEDS.normal,
   };
 
   function tourStopLabel(key) {
@@ -594,11 +613,17 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
   }
 
   function startTour() {
+    const scope = TOUR_SCOPES[tourScopeSelect?.value] || TOUR_SCOPES.full;
+    tourStops = [...scope, "__end__"];
+    tourState.dwellDuration =
+      TOUR_SPEEDS[tourSpeedSelect?.value] || TOUR_SPEEDS.normal;
     tourState.active = true;
     tourState.paused = false;
     tourState.index = 0;
     tourBar.classList.add("visible");
     tourBtn.textContent = "▶ Start Tour";
+    if (tourScopeSelect) tourScopeSelect.disabled = true;
+    if (tourSpeedSelect) tourSpeedSelect.disabled = true;
     goToTourStop(0);
   }
 
@@ -607,6 +632,8 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
     tourState.paused = false;
     clearTimeout(tourState.dwellTimer);
     tourBar.classList.remove("visible");
+    if (tourScopeSelect) tourScopeSelect.disabled = false;
+    if (tourSpeedSelect) tourSpeedSelect.disabled = false;
     clearFollow();
     if (showReset !== false) {
       // no-op, kept for symmetry
