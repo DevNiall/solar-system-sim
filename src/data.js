@@ -3,6 +3,19 @@
 // real published values (NASA/JPL, rounded for readability).
 // Visual scale fields (size, distance, speed) are DELIBERATELY compressed /
 // exaggerated for legibility — see the "About" panel in index.html.
+//
+// Moons live in a `moons: [...]` array on a planet (a legacy singular `moon`
+// object is still accepted by app.js). Each entry needs
+// { name, color, radius, distance, orbitSpeed } and may add a `texture`.
+// `distance` is measured from the planet's center in the same visual units as
+// `radius`, so it must exceed the planet's radius (and any ring outerRadius)
+// to avoid clipping; keep the outermost moon inside the gap to the next
+// planet's orbit so moons never appear to cross a neighbouring orbit ring.
+// Only the largest/most famous moons are modelled, and their
+// sizes/distances/speeds are exaggerated far more than the planets' —
+// real moons are far too small and close to see at this scale. Relative
+// ordering within a planet's moon system (which moon is biggest, which orbits
+// fastest) is kept true to life.
 
 // Real diffuse texture maps (CC-BY 4.0, Solar System Scope) committed locally
 // under assets/textures/ so the app doesn't depend on a third-party image
@@ -117,14 +130,16 @@ const PLANETS = [
       "Its single large Moon stabilizes Earth's axial tilt, helping keep our climate relatively stable.",
       "About 71% of Earth's surface is covered by oceans.",
     ],
-    moon: {
-      name: "Moon",
-      color: 0xbfbfbf,
-      texture: TEXTURES.moon,
-      radius: 0.35,
-      distance: 2.4,
-      orbitSpeed: 12,
-    },
+    moons: [
+      {
+        name: "Moon",
+        color: 0xbfbfbf,
+        texture: TEXTURES.moon,
+        radius: 0.35,
+        distance: 2.4,
+        orbitSpeed: 12,
+      },
+    ],
   },
   {
     key: "mars",
@@ -146,6 +161,14 @@ const PLANETS = [
       "Mars is home to Olympus Mons, the largest volcano in the solar system — nearly 3x the height of Mount Everest.",
       "Its red color comes from iron oxide (rust) covering its surface.",
       "Mars has seasons similar to Earth's because its axial tilt is nearly the same.",
+      "Its two moons, Phobos and Deimos, are tiny lumpy rocks — probably captured asteroids — only about 22 km and 12 km across.",
+      "Phobos circles Mars in just 7.6 hours, faster than Mars itself spins, so from the surface it rises in the west and sets in the east.",
+    ],
+    // Phobos and Deimos are really only a few km across; drawn much larger
+    // here (but still by far the smallest moons in the sim) so they're visible.
+    moons: [
+      { name: "Phobos", color: 0x7d7266, radius: 0.16, distance: 1.7, orbitSpeed: 9 },
+      { name: "Deimos", color: 0x968a7c, radius: 0.11, distance: 2.6, orbitSpeed: 3.2 },
     ],
   },
   {
@@ -168,6 +191,18 @@ const PLANETS = [
       "Jupiter is so massive that its gravity helps shield the inner solar system from many comets and asteroids.",
       "The Great Red Spot is a giant storm larger than Earth that has raged for centuries.",
       "Jupiter has the shortest day of any planet, spinning once every ~10 hours despite its huge size.",
+      "Its four biggest moons — Io, Europa, Ganymede and Callisto — were spotted by Galileo in 1610 and proved not everything orbits Earth.",
+      "Io is the most volcanically active world we know of, while Europa hides a salty ocean under its ice shell — one of the best places to look for life.",
+      "Ganymede is the largest moon in the solar system: bigger than the planet Mercury, and the only moon with its own magnetic field.",
+    ],
+    // The Galilean moons. Real size order is preserved
+    // (Ganymede > Callisto > Io > Europa) but every moon is drawn far larger
+    // and far closer in than reality so all four read clearly next to Jupiter.
+    moons: [
+      { name: "Io", color: 0xe6cf72, radius: 0.30, distance: 5.0, orbitSpeed: 6 },
+      { name: "Europa", color: 0xdcd3c4, radius: 0.26, distance: 6.2, orbitSpeed: 4 },
+      { name: "Ganymede", color: 0xa2988a, radius: 0.42, distance: 7.5, orbitSpeed: 2.4 },
+      { name: "Callisto", color: 0x736958, radius: 0.38, distance: 8.9, orbitSpeed: 1.4 },
     ],
   },
   {
@@ -189,9 +224,17 @@ const PLANETS = [
     facts: [
       "Saturn's rings are made mostly of ice particles, with some rock and dust, ranging from tiny grains to house-sized chunks.",
       "Saturn is the least dense planet — it would float in water if you had a bathtub big enough.",
-      "Titan, its largest moon, has thick atmosphere and lakes of liquid methane.",
+      "Titan, its largest moon, is bigger than the planet Mercury and the only moon with a thick atmosphere — denser than Earth's, with rain and lakes of liquid methane.",
+      "Tiny Enceladus shoots geysers of salty water hundreds of kilometres into space from an ocean beneath its icy crust.",
     ],
     rings: { innerRadius: 4.2, outerRadius: 7.2, color: 0xc9b98a, texture: TEXTURES.saturnRing },
+    // Both moons orbit outside the ring system (as they really do) so they
+    // never clip through the ring disc. Titan is genuinely huge — bigger than
+    // Mercury — while Enceladus is a small ice ball, kept just visible here.
+    moons: [
+      { name: "Enceladus", color: 0xeef3f5, radius: 0.20, distance: 7.7, orbitSpeed: 4 },
+      { name: "Titan", color: 0xd9a04a, radius: 0.55, distance: 8.8, orbitSpeed: 1.6 },
+    ],
   },
   {
     key: "uranus",

@@ -27,6 +27,7 @@ npm run preview   # optional: serve the built dist/ output locally
 ## Features
 
 - Sun + all 8 planets (Mercury–Neptune), each with real NASA/JPL-derived texture maps, distinct size, orbiting at different relative speeds.
+- Moons for Earth, Mars, Jupiter, and Saturn (the Moon; Phobos & Deimos; Io, Europa, Ganymede & Callisto; Enceladus & Titan), each orbiting its planet at its own relative speed.
 - Earth gets a day-map, specular map (oceans reflect more than land), and an additive cloud layer; Saturn gets a real translucent ring texture.
 - A soft sun glow (backside corona sphere + additive-blended radial-gradient sprite) stands in for full bloom postprocessing while keeping the app a plain-`<script>`, no-build-step setup.
 - Starfield background: procedural points plus a real Milky Way skybox texture.
@@ -46,7 +47,7 @@ This simulator intentionally is **not to scale**, and says so in the UI:
 - **Planet sizes** are exaggerated (especially the smaller inner planets) relative to the Sun so they remain visible — in reality the Sun is ~109x Earth's diameter, which would render most planets as invisible specks.
 - **Orbital distances** use a compressed, roughly logarithmic layout so the whole system (Mercury through Neptune) fits in one viewport without needing the camera to travel astronomical (pun intended) distances.
 - **Orbital speeds** preserve the *relative* ordering from real physics (inner planets orbit much faster than outer ones, consistent with Kepler's third law) but are scaled up dramatically for visible motion — they are not in true proportion to each other beyond ordering/relative ratios.
-- Axial tilts, orbital inclinations, and most moons (beyond Earth's) are simplified or omitted for clarity.
+- Axial tilts and orbital inclinations are simplified or omitted for clarity, and only the largest/best-known moons are modelled (Earth's Moon; Mars' Phobos & Deimos; Jupiter's four Galilean moons; Saturn's Titan & Enceladus). Moon sizes, orbital distances, and orbit speeds are exaggerated even more aggressively than the planets' — real moons would be sub-pixel specks hugging their planet — though relative ordering within each moon system (largest moon, fastest orbit) is kept true to life.
 
 All non-geometric facts presented in the info panels (diameters, day/year lengths, moon counts, and other details) are real, drawn from published NASA/JPL data.
 

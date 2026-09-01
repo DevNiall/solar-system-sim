@@ -270,9 +270,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       mesh.add(ringMesh);
     }
 
-    // Moons (currently only Earth has one, via p.moon; also supports a
-    // future p.moons array so more planets can get multiple moons without
-    // another refactor here).
+    // Moons: a `p.moons` array of defs (legacy singular `p.moon` still
+    // accepted). Each moon is a pivot parented to the planet mesh, so moons
+    // travel with the planet along its orbit and are spun by the pivot.
     const moonDefs = p.moons || (p.moon ? [p.moon] : []);
     const moonPivots = [];
     const moonMeshes = [];
