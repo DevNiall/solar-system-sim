@@ -1,24 +1,28 @@
 # Solar System Simulator
 
-![Guided flyby tour demo](assets/media/demo.gif)
+![Guided flyby tour demo](public/media/demo.gif)
 
 **[Live demo](https://devniall.github.io/solar-system-sim/)**
 
-A dependency-light, WebGL solar system visualizer built with [Three.js](https://threejs.org/) (loaded via CDN, no build step). Designed as an educational tool for high-school-level astronomy: explore the Sun and all eight planets, click on any body for real facts, and take a guided cinematic tour of the whole system.
+A dependency-light, WebGL solar system visualizer built with [Three.js](https://threejs.org/) (via npm, bundled with [Vite](https://vitejs.dev/)). Designed as an educational tool for high-school-level astronomy: explore the Sun and all eight planets, click on any body for real facts, and take a guided cinematic tour of the whole system.
 
 ## Running locally
 
-No build step is required. Because the app loads `data.js` and `app.js` as separate scripts, you must serve the files over HTTP (opening `index.html` directly via `file://` will be blocked by the browser's script-loading/CORS rules in some browsers). The simplest options:
+This project uses [Vite](https://vitejs.dev/) for local development and bundling. You'll need [Node.js](https://nodejs.org/) installed.
 
 ```bash
-# Python 3 (built into most systems)
-python3 -m http.server 8000
-
-# or Node, if you have it
-npx serve .
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:8000/` in Chrome.
+Then open the URL Vite prints (usually `http://localhost:5173/`) in your browser.
+
+To produce a production build (output goes to `dist/`):
+
+```bash
+npm run build
+npm run preview   # optional: serve the built dist/ output locally
+```
 
 ## Features
 
@@ -33,7 +37,7 @@ Then open `http://localhost:8000/` in Chrome.
 
 ## Textures
 
-Real diffuse texture maps (plus Earth's cloud/specular layers and Saturn's ring alpha texture) are from [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). They're committed locally under `assets/textures/` (not hot-linked) so the app doesn't depend on a third-party image host staying up. If any texture fails to load for any reason, materials gracefully fall back to their solid base color — the app never crashes or shows a broken-image icon.
+Real diffuse texture maps (plus Earth's cloud/specular layers and Saturn's ring alpha texture) are from [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). They're committed locally under `public/textures/` (not hot-linked) so the app doesn't depend on a third-party image host staying up. If any texture fails to load for any reason, materials gracefully fall back to their solid base color — the app never crashes or shows a broken-image icon.
 
 ## Deliberate scale/accuracy tradeoffs
 
@@ -48,9 +52,11 @@ All non-geometric facts presented in the info panels (diameters, day/year length
 
 ## Project structure
 
-- `index.html` — page markup, UI panels (info panel, tour bar, about modal), and CDN script tags.
-- `data.js` — Sun/planet/moon data: visual parameters (color, compressed size/distance/speed, texture paths) and real astronomical facts.
-- `app.js` — Three.js scene setup, texture loading (with fallback), custom camera controls (orbit/pan/zoom), raycasting/selection, and the guided tour state machine (including live camera tracking of moving targets).
-- `assets/textures/` — committed CC-BY 4.0 texture maps (see Textures section above).
+- `index.html` — page markup, UI panels (info panel, tour bar, about modal), and the Vite entry `<script type="module">` tag.
+- `src/data.js` — Sun/planet/moon data: visual parameters (color, compressed size/distance/speed, texture paths) and real astronomical facts.
+- `src/app.js` — Three.js scene setup, texture loading (with fallback), custom camera controls (orbit/pan/zoom), raycasting/selection, and the guided tour state machine (including live camera tracking of moving targets).
+- `public/textures/` — committed CC-BY 4.0 texture maps (see Textures section above), served as-is by Vite from the project root.
+- `vite.config.js` — Vite build config, including the `base` path required for GitHub Pages deployment.
+- `.github/workflows/deploy.yml` — builds the project and deploys `dist/` to GitHub Pages on push to `main`.
 
-No bundler, package manager, or build step is involved — just static files and a pinned Three.js CDN version (`three@0.160.0`).
+This is a standard [Vite](https://vitejs.dev/) project with Three.js (`three@0.160.0`) installed as an npm dependency (see `package.json`).

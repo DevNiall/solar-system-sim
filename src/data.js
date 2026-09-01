@@ -8,21 +8,23 @@
 // under assets/textures/ so the app doesn't depend on a third-party image
 // host staying up. If a texture fails to load, materials fall back to solid
 // colors (see app.js loadTexture()).
+const BASE = import.meta.env.BASE_URL;
+
 const TEXTURES = {
-  sun: "assets/textures/2k_sun.jpg",
-  mercury: "assets/textures/2k_mercury.jpg",
-  venus: "assets/textures/2k_venus_surface.jpg",
-  earthDay: "assets/textures/2k_earth_daymap.jpg",
-  earthClouds: "assets/textures/2k_earth_clouds.jpg",
-  earthSpecular: "assets/textures/2k_earth_specular_map.jpg",
-  mars: "assets/textures/2k_mars.jpg",
-  jupiter: "assets/textures/2k_jupiter.jpg",
-  saturn: "assets/textures/2k_saturn.jpg",
-  saturnRing: "assets/textures/2k_saturn_ring_alpha.png",
-  uranus: "assets/textures/2k_uranus.jpg",
-  neptune: "assets/textures/2k_neptune.jpg",
-  moon: "assets/textures/2k_moon.jpg",
-  starsMilkyWay: "assets/textures/2k_stars_milky_way.jpg",
+  sun: `${BASE}textures/2k_sun.jpg`,
+  mercury: `${BASE}textures/2k_mercury.jpg`,
+  venus: `${BASE}textures/2k_venus_surface.jpg`,
+  earthDay: `${BASE}textures/2k_earth_daymap.jpg`,
+  earthClouds: `${BASE}textures/2k_earth_clouds.jpg`,
+  earthSpecular: `${BASE}textures/2k_earth_specular_map.jpg`,
+  mars: `${BASE}textures/2k_mars.jpg`,
+  jupiter: `${BASE}textures/2k_jupiter.jpg`,
+  saturn: `${BASE}textures/2k_saturn.jpg`,
+  saturnRing: `${BASE}textures/2k_saturn_ring_alpha.png`,
+  uranus: `${BASE}textures/2k_uranus.jpg`,
+  neptune: `${BASE}textures/2k_neptune.jpg`,
+  moon: `${BASE}textures/2k_moon.jpg`,
+  starsMilkyWay: `${BASE}textures/2k_stars_milky_way.jpg`,
 };
 
 const SUN = {
@@ -236,3 +238,5 @@ const PLANETS = [
     ],
   },
 ];
+
+export { TEXTURES, SUN, PLANETS };

@@ -1,6 +1,9 @@
 // Solar System Simulator — main application logic.
-// Uses global THREE (loaded via CDN script tag in index.html) and the
-// SUN / PLANETS data defined in data.js.
+// THREE is imported as an ES module (npm dependency); SUN / PLANETS data
+// come from data.js (also an ES module).
+
+import * as THREE from "three";
+import { TEXTURES, SUN, PLANETS } from "./data.js";
 
 (function () {
   "use strict";
@@ -266,27 +269,32 @@
       mesh.add(ringMesh);
     }
 
-    // Moon (Earth only, for now)
-    let moonPivot = null;
-    let moonMesh = null;
-    if (p.moon) {
-      moonPivot = new THREE.Object3D();
+    // Moons (currently only Earth has one, via p.moon; also supports a
+    // future p.moons array so more planets can get multiple moons without
+    // another refactor here).
+    const moonDefs = p.moons || (p.moon ? [p.moon] : []);
+    const moonPivots = [];
+    const moonMeshes = [];
+    moonDefs.forEach((m) => {
+      const moonPivot = new THREE.Object3D();
       mesh.add(moonPivot);
-      const mGeo = new THREE.SphereGeometry(p.moon.radius, 32, 32);
-      const mMat = new THREE.MeshStandardMaterial({ color: p.moon.color, roughness: 0.9 });
-      moonMesh = new THREE.Mesh(mGeo, mMat);
-      moonMesh.position.set(p.moon.distance, 0, 0);
+      const mGeo = new THREE.SphereGeometry(m.radius, 32, 32);
+      const mMat = new THREE.MeshStandardMaterial({ color: m.color, roughness: 0.9 });
+      const moonMesh = new THREE.Mesh(mGeo, mMat);
+      moonMesh.position.set(m.distance, 0, 0);
       moonMesh.userData.isSelectable = false;
       moonPivot.add(moonMesh);
-      applyTexture(p.moon.texture, mMat, "map", true);
-    }
+      applyTexture(m.texture, mMat, "map", true);
+      moonPivots.push(moonPivot);
+      moonMeshes.push(moonMesh);
+    });
 
     planetObjects.push({
       data: p,
       pivot,
       mesh,
-      moonPivot,
-      moonMesh,
+      moonPivots,
+      moonMeshes,
       angle: Math.random() * Math.PI * 2,
     });
   });
@@ -748,8 +756,12 @@
       if (obj.mesh.userData.cloudMesh) {
         obj.mesh.userData.cloudMesh.rotation.y += 0.02 * dt;
       }
-      if (obj.moonPivot) {
-        obj.moonPivot.rotation.y += (obj.data.moon.orbitSpeed || 5) * ORBIT_TIME_SCALE * dt;
+      if (obj.moonPivots && obj.moonPivots.length) {
+        const moonDefs = obj.data.moons || (obj.data.moon ? [obj.data.moon] : []);
+        obj.moonPivots.forEach((moonPivot, i) => {
+          const m = moonDefs[i];
+          moonPivot.rotation.y += ((m && m.orbitSpeed) || 5) * ORBIT_TIME_SCALE * dt;
+        });
       }
     });
 
