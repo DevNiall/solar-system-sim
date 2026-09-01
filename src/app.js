@@ -4,6 +4,7 @@
 
 import * as THREE from "three";
 import { TEXTURES, SUN, PLANETS } from "./data.js";
+import { generateQuizQuestions, shuffle } from "./quiz.js";
 
 (function () {
   "use strict";
@@ -727,6 +728,68 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
   aboutCloseBtn.addEventListener("click", () => aboutModal.classList.remove("visible"));
   aboutModal.addEventListener("click", (e) => {
     if (e.target === aboutModal) aboutModal.classList.remove("visible");
+  });
+
+  // ---------------------------------------------------------------------
+  // Quiz mode — a calm, unscored flashcard flow (question / reveal / next).
+  // Purely additive: it doesn't touch tour state, camera, or info panel.
+  // ---------------------------------------------------------------------
+  const quizBtn = document.getElementById("quizBtn");
+  const quizModal = document.getElementById("quizModal");
+  const quizCloseBtn = document.getElementById("quizCloseBtn");
+  const quizProgress = document.getElementById("quizProgress");
+  const quizQuestionEl = document.getElementById("quizQuestion");
+  const quizAnswerEl = document.getElementById("quizAnswer");
+  const quizRevealBtn = document.getElementById("quizRevealBtn");
+  const quizNextBtn = document.getElementById("quizNextBtn");
+  const quizExitBtn = document.getElementById("quizExitBtn");
+
+  const quizState = {
+    cards: [],
+    index: 0,
+    revealed: false,
+  };
+
+  function showQuizCard() {
+    const card = quizState.cards[quizState.index];
+    quizQuestionEl.textContent = card.question;
+    quizAnswerEl.textContent = "";
+    quizState.revealed = false;
+    quizRevealBtn.disabled = false;
+    quizProgress.textContent = `Card ${quizState.index + 1} of ${quizState.cards.length}`;
+  }
+
+  function openQuiz() {
+    if (quizState.cards.length === 0) {
+      quizState.cards = shuffle(generateQuizQuestions(SUN, PLANETS));
+    }
+    quizState.index = 0;
+    showQuizCard();
+    quizModal.classList.add("visible");
+  }
+
+  function closeQuiz() {
+    quizModal.classList.remove("visible");
+  }
+
+  function revealQuizAnswer() {
+    const card = quizState.cards[quizState.index];
+    quizAnswerEl.textContent = card.answer;
+    quizState.revealed = true;
+  }
+
+  function nextQuizCard() {
+    quizState.index = (quizState.index + 1) % quizState.cards.length;
+    showQuizCard();
+  }
+
+  quizBtn.addEventListener("click", openQuiz);
+  quizCloseBtn.addEventListener("click", closeQuiz);
+  quizExitBtn.addEventListener("click", closeQuiz);
+  quizRevealBtn.addEventListener("click", revealQuizAnswer);
+  quizNextBtn.addEventListener("click", nextQuizCard);
+  quizModal.addEventListener("click", (e) => {
+    if (e.target === quizModal) closeQuiz();
   });
 
   // ---------------------------------------------------------------------

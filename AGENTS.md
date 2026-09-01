@@ -13,6 +13,7 @@ Vite project (`vite.config.js`, `package.json`): `npm install && npm run dev` fo
 - `vite.config.js` sets `base: "/solar-system-sim/"` to match the GitHub Pages URL (`https://devniall.github.io/solar-system-sim/`). If the Pages URL/repo name ever changes, update `base` here.
 - Deployment: `.github/workflows/deploy.yml` builds with Vite and publishes `dist/` via `actions/deploy-pages`. Requires the repo's Pages source to be set to "GitHub Actions" (not "Deploy from a branch") in repo settings.
 - Moon data model: `src/app.js` builds `moonPivots`/`moonMeshes` arrays per planet from `p.moons` (array) or the legacy singular `p.moon` object in `src/data.js`, so adding more moons per planet doesn't require another refactor.
+- Quiz mode: `src/quiz.js` (`generateQuizQuestions`) derives flashcard Q&A pairs from `stats`/`tagline`/`facts` on `SUN`/`PLANETS` in `src/data.js` — it's purely data-driven, so new stat fields or facts automatically produce more flashcards without touching quiz code. UI wiring (button, modal, reveal/next/exit) lives in `src/app.js` near the end, using `#quizModal` markup/styles in `index.html`. It's an additive, unscored flashcard flow — no points/streaks — and doesn't touch tour/camera/info-panel state.
 
 ## Maintaining this file
 
