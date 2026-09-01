@@ -13,6 +13,7 @@ Vite project (`vite.config.js`, `package.json`): `npm install && npm run dev` fo
 - `vite.config.js` sets `base: "/solar-system-sim/"` to match the GitHub Pages URL (`https://devniall.github.io/solar-system-sim/`). If the Pages URL/repo name ever changes, update `base` here.
 - Deployment: `.github/workflows/deploy.yml` builds with Vite and publishes `dist/` via `actions/deploy-pages`. Requires the repo's Pages source to be set to "GitHub Actions" (not "Deploy from a branch") in repo settings.
 - Moon data model: `src/app.js` builds `moonPivots`/`moonMeshes` arrays per planet from `p.moons` (array) or the legacy singular `p.moon` object in `src/data.js`, so adding more moons per planet doesn't require another refactor.
+- Camera controls (`src/app.js`, near "Custom orbit/pan/zoom camera controls") are hand-rolled spherical-coordinate orbit/pan/zoom with both mouse (`mousedown`/`mousemove`/`wheel`) and touch (`touchstart`/`touchmove`/`touchend`) listeners on `renderer.domElement`. Touch supports single-finger orbit, two-finger pinch-zoom, and tap-to-select; two-finger pan is intentionally not implemented (pinch is the only two-finger gesture) to avoid gesture-disambiguation complexity. Tap/click selection logic is shared via `selectAtScreenPoint(clientX, clientY)`.
 
 ## Maintaining this file
 
