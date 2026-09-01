@@ -16,6 +16,54 @@
 // real moons are far too small and close to see at this scale. Relative
 // ordering within a planet's moon system (which moon is biggest, which orbits
 // fastest) is kept true to life.
+//
+// ---------------------------------------------------------------------------
+// THE VISUAL DISTANCE SCALE (`distance`, and ASTEROID_BELT's radii)
+// ---------------------------------------------------------------------------
+// One hand-tuned, monotonically-compressing scale covers everything from
+// Mercury to Pluto. The rule it follows: the further out you go, the harder a
+// given number of AU is squeezed, so the ordering and the *relative* size of
+// the gaps stay believable while the whole system still fits on one screen.
+//
+//   body            real AU   visual   gap from previous   visual-per-AU
+//   Mercury           0.39       11          —                  —
+//   Venus             0.72       15         4.0                11.9
+//   Earth             1.00       20         5.0                18.1  (near 1:1)
+//   Mars              1.52       27         7.0                13.4
+//   asteroid belt   2.06–3.28  32–44         5.0                 8.4
+//   Ceres             2.77       39      (inside the belt)
+//   Jupiter           5.20       57        13.0                 8.4
+//   Saturn            9.58       73        16.0                 3.7
+//   Uranus           19.20       88        15.0                 1.6
+//   Neptune          30.05      101        13.0                 1.2
+//   Pluto            39.48      112        11.0                 1.2
+//
+// Mercury is the one deliberate outlier: at a true 0.39 AU it would sit inside
+// the Sun's glow sprite (radius 6.5 x 1.35), so it is pushed out to 11.
+//
+// Two hard constraints this table has to satisfy, and any future edit must
+// preserve:
+//   1. A planet's outermost moon distance must be smaller than the gap to the
+//      neighbouring orbit (Jupiter's Callisto at 8.9 and Saturn's Titan at 8.8
+//      are the binding cases — hence the 13+ unit gaps around them).
+//   2. The asteroid belt's outer edge (44) must clear Jupiter's moon system
+//      (57 - 8.9 = 48.1), and its inner edge (32) must clear Mars' moons
+//      (27 + 2.6 = 29.6).
+//
+// Body `radius` values follow a separate compressed law of roughly
+// r ~= 1.4 x (diameter / Earth's diameter)^0.42, which is where Ceres (0.40)
+// and Pluto (0.65) come from. Moons are on their own, even more exaggerated
+// scale, so a big moon can out-size a dwarf planet on screen — see the About
+// panel.
+//
+// Dwarf planets are ordinary PLANETS entries flagged `dwarf: true`. That flag
+// only affects wording elsewhere (quiz.js excludes them from "which *planet*
+// is..." superlatives); everything else — orbit ring, click-to-select, tour,
+// info panel, deep links — comes for free from being in this array.
+//
+// `orbitInclination` (radians, optional) tilts a body's whole orbital plane.
+// It is used for the two dwarf planets, whose steeply tilted orbits are a
+// genuinely distinguishing feature; the eight planets stay coplanar.
 
 // Real diffuse texture maps (CC-BY 4.0, Solar System Scope) committed locally
 // under assets/textures/ so the app doesn't depend on a third-party image
@@ -61,7 +109,31 @@ const SUN = {
   ],
 };
 
-// Order matters — also defines tour order.
+// The asteroid belt: a purely decorative particle field, not a set of
+// individually simulated bodies. app.js renders it as ONE THREE.Points cloud
+// of `count` particles scattered in a flat annulus and slowly rotates that
+// single object, which keeps it to one draw call no matter how dense it looks.
+//
+// Radii place it between Mars (27) and Jupiter (57) on the scale documented at
+// the top of this file; the real belt spans roughly 2.06–3.28 AU. `thickness`
+// is the vertical half-spread — the real belt is a flattened torus, not a
+// razor-thin disc, but it is far thinner than it is wide.
+const ASTEROID_BELT = {
+  innerRadius: 32,
+  outerRadius: 44,
+  thickness: 0.9,
+  count: 1200,
+  // Rocky greys/browns, picked randomly per particle for a bit of texture.
+  colors: [0x8d8378, 0xa79885, 0x6d655b, 0xb3a591],
+  particleSize: 0.28,
+  // Radians/sec before ORBIT_TIME_SCALE. Close to Ceres' orbitSpeed so the
+  // field drifts at about the pace of the real objects inside it.
+  driftSpeed: 0.22,
+};
+
+// Order matters — also defines tour order, so entries are kept in order of
+// increasing distance from the Sun (which puts Ceres in the belt between Mars
+// and Jupiter, and Pluto last).
 const PLANETS = [
   {
     key: "mercury",
@@ -147,7 +219,7 @@ const PLANETS = [
     color: 0xc1440e,
     texture: TEXTURES.mars,
     radius: 1.0,
-    distance: 26,
+    distance: 27,
     orbitSpeed: 0.53,
     rotationSpeed: 0.88,
     tagline: "The dusty, rust-red desert planet.",
@@ -172,12 +244,40 @@ const PLANETS = [
     ],
   },
   {
+    key: "ceres",
+    name: "Ceres",
+    color: 0x8f8880,
+    // No public-domain 2k texture is committed for Ceres, so it renders with
+    // its solid fallback colour — a pale, heavily cratered grey.
+    dwarf: true,
+    radius: 0.4,
+    distance: 39, // inside ASTEROID_BELT (32–44), matching its real 2.77 AU
+    orbitSpeed: 0.217, // 4.6 Earth years
+    rotationSpeed: 2.4, // 9-hour day — one of the faster spinners
+    orbitInclination: 0.08, // ~4.6° here; really 10.6°, softened to stay in the belt
+    tagline: "The biggest world in the asteroid belt.",
+    stats: {
+      "Diameter": "940 km (about 1/13th of Earth)",
+      "Day length": "9.1 hours",
+      "Year length": "4.6 Earth years",
+      "Moons": "0",
+      "Type": "Dwarf planet",
+    },
+    facts: [
+      "Ceres is the largest object in the asteroid belt — on its own it holds about a quarter of the belt's total mass.",
+      "When it was discovered in 1801 it was called a planet; it was later demoted to an asteroid, then reclassified again as a dwarf planet in 2006.",
+      "It is made partly of water ice: there may be more fresh water locked inside Ceres than in all of Earth's rivers and lakes.",
+      "NASA's Dawn spacecraft found bright white patches in its craters — salt left behind after briny water seeped up and froze.",
+      "Ceres is the only dwarf planet in the inner solar system; all the others orbit out beyond Neptune.",
+    ],
+  },
+  {
     key: "jupiter",
     name: "Jupiter",
     color: 0xd8ac7c,
     texture: TEXTURES.jupiter,
     radius: 3.8,
-    distance: 36,
+    distance: 57,
     orbitSpeed: 0.084,
     rotationSpeed: 2.2,
     tagline: "The giant king of the planets.",
@@ -211,7 +311,7 @@ const PLANETS = [
     color: 0xe3cf9c,
     texture: TEXTURES.saturn,
     radius: 3.3,
-    distance: 46,
+    distance: 73,
     orbitSpeed: 0.034,
     rotationSpeed: 2.0,
     tagline: "The jewel of the solar system, famous for its rings.",
@@ -242,7 +342,7 @@ const PLANETS = [
     color: 0x9fe3e8,
     texture: TEXTURES.uranus,
     radius: 2.2,
-    distance: 55,
+    distance: 88,
     orbitSpeed: 0.012,
     rotationSpeed: 1.4,
     tagline: "The tilted ice giant that spins on its side.",
@@ -264,7 +364,7 @@ const PLANETS = [
     color: 0x3a5fcd,
     texture: TEXTURES.neptune,
     radius: 2.1,
-    distance: 64,
+    distance: 101,
     orbitSpeed: 0.006,
     rotationSpeed: 1.5,
     tagline: "The distant, windy blue ice giant.",
@@ -280,6 +380,40 @@ const PLANETS = [
       "Triton, its largest moon, orbits backwards and is likely a captured Kuiper Belt object.",
     ],
   },
+  {
+    key: "pluto",
+    name: "Pluto",
+    color: 0xc7a17a,
+    dwarf: true,
+    radius: 0.65,
+    distance: 112,
+    orbitSpeed: 0.004, // 248 Earth years — the slowest body in the sim
+    rotationSpeed: -0.14, // 6.4-day day, and it spins on its side, backwards
+    // Really 17.2°. Drawn at full strength because this steep tilt (and the
+    // way it lifts Pluto clear of Neptune's orbit) is one of the headline
+    // facts about Pluto.
+    orbitInclination: 0.3,
+    tagline: "The famous dwarf planet at the edge of the planets.",
+    stats: {
+      "Diameter": "2,377 km (smaller than our Moon)",
+      "Day length": "6.4 Earth days",
+      "Year length": "248 Earth years",
+      "Moons": "5 known (Charon is by far the largest)",
+      "Type": "Dwarf planet",
+    },
+    facts: [
+      "Pluto was called the ninth planet from its discovery in 1930 until 2006, when astronomers reclassified it as a dwarf planet.",
+      "It lost planet status because it hasn't 'cleared its neighbourhood' — it shares the Kuiper Belt with thousands of other icy worlds.",
+      "Pluto has 5 known moons. Charon is so big — half Pluto's width — that the two orbit a point in empty space between them, like a double world.",
+      "Its orbit is tilted 17° out of the flat plane the eight planets share, and is so stretched (eccentric) that for 20 years of every 248 it is closer to the Sun than Neptune.",
+      "NASA's New Horizons flew past in 2015 and found nitrogen-ice glaciers and mountains of frozen water in a heart-shaped plain.",
+    ],
+    // Charon really is about half Pluto's diameter — no exaggeration needed to
+    // make the point that this is nearly a double planet.
+    moons: [
+      { name: "Charon", color: 0x9d9188, radius: 0.3, distance: 1.7, orbitSpeed: 3 },
+    ],
+  },
 ];
 
-export { TEXTURES, SUN, PLANETS };
+export { TEXTURES, SUN, PLANETS, ASTEROID_BELT };

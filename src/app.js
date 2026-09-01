@@ -3,7 +3,7 @@
 // come from data.js (also an ES module).
 
 import * as THREE from "three";
-import { TEXTURES, SUN, PLANETS } from "./data.js";
+import { TEXTURES, SUN, PLANETS, ASTEROID_BELT } from "./data.js";
 import { generateQuizQuestions, shuffle } from "./quiz.js";
 
 (function () {
@@ -21,13 +21,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   const scene = new THREE.Scene();
 
+  // How far back the camera sits for a whole-system overview: the startup
+  // view, the "Tour complete" pull-back, and the Reset View button all use it.
+  // Derived from the outermost orbit rather than hardcoded so it keeps framing
+  // the system if the distance scale in data.js is retuned again. The 1.7
+  // factor leaves margin for the dwarf planets' inclined orbits, which stick
+  // further out of the ecliptic plane than any of the eight planets do.
+  const OUTERMOST_ORBIT = PLANETS.reduce((max, p) => Math.max(max, p.distance), 0);
+  const OVERVIEW_DISTANCE = Math.round(OUTERMOST_ORBIT * 1.7);
+
   const camera = new THREE.PerspectiveCamera(
     50,
     window.innerWidth / window.innerHeight,
     0.1,
     2000
   );
-  camera.position.set(0, 40, 90);
+  // Same distance as OVERVIEW_DISTANCE, looking down on the ecliptic at ~24°.
+  camera.position.set(0, OVERVIEW_DISTANCE * 0.41, OVERVIEW_DISTANCE * 0.912);
 
   // ---------------------------------------------------------------------
   // Texture loading helper (graceful fallback to solid colors on failure)
@@ -95,6 +105,92 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     mat.color.set(0xffffff);
   }
   buildSkybox();
+
+  // ---------------------------------------------------------------------
+  // Asteroid belt
+  //
+  // Built the same way as the starfield above — one procedurally-filled
+  // BufferGeometry rendered as a single THREE.Points — but scattered through a
+  // flat annulus between Mars and Jupiter instead of a sphere shell. This is a
+  // decorative field, NOT a set of individually simulated bodies: the whole
+  // cloud is one object that we spin slowly about Y, so a thousand-plus
+  // asteroids cost one draw call and no per-body work in the animation loop.
+  // Ceres is the one belt object modelled for real, as a PLANETS entry.
+  // ---------------------------------------------------------------------
+  let asteroidBelt = null;
+
+  // PointsMaterial draws square sprites by default, which reads fine as a
+  // distant dusty band but looks like a field of floating cubes once the tour
+  // (or a click on Ceres) puts the camera inside the belt. This canvas-drawn
+  // soft disc is used as the material's map so each particle is a round rock.
+  // alphaTest (rather than plain alpha blending) keeps depth writes on, so
+  // particles occlude each other and get correctly hidden behind planets.
+  function buildAsteroidSpriteTexture() {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createRadialGradient(
+      size / 2, size / 2, 0,
+      size / 2, size / 2, size / 2
+    );
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.7, "rgba(255,255,255,1)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function buildAsteroidBelt() {
+    const belt = ASTEROID_BELT;
+    if (!belt) return;
+
+    const count = belt.count;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const palette = belt.colors.map((c) => new THREE.Color(c));
+    const mid = (belt.innerRadius + belt.outerRadius) / 2;
+    const halfWidth = (belt.outerRadius - belt.innerRadius) / 2;
+
+    for (let i = 0; i < count; i++) {
+      // Averaging two uniform samples gives a triangular distribution peaked
+      // at the belt's mid-radius, so it thins out towards both edges rather
+      // than stopping at a hard line — much closer to how the real belt looks.
+      const spread = (Math.random() + Math.random() - 1) * halfWidth;
+      const radius = mid + spread;
+      const theta = Math.random() * Math.PI * 2;
+      // Same trick vertically, and thinner near the edges of the annulus so
+      // the field reads as a flattened torus rather than a flat washer.
+      const edgeFalloff = 1 - Math.abs(spread) / halfWidth;
+      const y = (Math.random() + Math.random() - 1) * belt.thickness * edgeFalloff;
+
+      positions[i * 3] = Math.cos(theta) * radius;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(theta) * radius;
+
+      const c = palette[(Math.random() * palette.length) | 0];
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: belt.particleSize,
+      sizeAttenuation: true,
+      vertexColors: true,
+      map: buildAsteroidSpriteTexture(),
+      transparent: true,
+      alphaTest: 0.4,
+    });
+    asteroidBelt = new THREE.Points(geo, mat);
+    scene.add(asteroidBelt);
+  }
+  buildAsteroidBelt();
 
   // ---------------------------------------------------------------------
   // Lighting
@@ -203,12 +299,27 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const planetObjects = []; // { data, pivot, mesh, angle }
 
   PLANETS.forEach((p) => {
-    scene.add(buildOrbitRing(p.distance));
+    // Every body hangs off an orbit group so an inclined orbit (the dwarf
+    // planets) tilts the ring and the body together. The tilt lives on this
+    // outer group rather than on the pivot itself because the pivot's own
+    // rotation.y is rewritten every frame to advance the orbit — combining
+    // both rotations on one Euler would make the orbital plane wobble.
+    const orbitGroup = new THREE.Object3D();
+    if (p.orbitInclination) orbitGroup.rotation.z = p.orbitInclination;
+    scene.add(orbitGroup);
+
+    orbitGroup.add(buildOrbitRing(p.distance));
 
     const pivot = new THREE.Object3D();
-    scene.add(pivot);
+    orbitGroup.add(pivot);
 
-    const geo = new THREE.SphereGeometry(p.radius, 48, 48);
+    // Sub-unit bodies (the dwarf planets) are moon-sized on screen, so they
+    // get the same 32-segment sphere the moons use instead of the 48-segment
+    // one the planets need — visually identical at that size, and it keeps
+    // them from costing more vertices per frame than Jupiter does.
+    const segments = p.radius < 1 ? 32 : 48;
+
+    const geo = new THREE.SphereGeometry(p.radius, segments, segments);
     let mesh;
 
     if (p.key === "earth") {
@@ -327,7 +438,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function updateCameraFromSpherical() {
     camSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, camSpherical.phi));
-    camSpherical.radius = Math.max(3, Math.min(600, camSpherical.radius));
+    camSpherical.radius = Math.max(3, Math.min(700, camSpherical.radius));
     const offset = new THREE.Vector3().setFromSpherical(camSpherical);
     camera.position.copy(controlsTarget).add(offset);
     camera.lookAt(controlsTarget);
@@ -668,7 +779,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function flyCameraToKey(key, durationScale) {
     const data = getDataByKey(key);
     const radius = data.radius || 3;
-    const viewDist = Math.max(radius * 5, 8);
+    // Sub-unit bodies (the dwarf planets) need a much closer stop than the
+    // radius x 5 / 8-unit floor used for planets, or the tour and click-to-
+    // select would frame Ceres and Pluto as barely-visible dots.
+    const viewDist = radius < 1 ? Math.max(radius * 14, 3.5) : Math.max(radius * 5, 8);
     flyCameraTo(() => getWorldPositionForKey(key), viewDist, 1800 * (durationScale || 1));
   }
 
@@ -710,12 +824,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const tourSpeedSelect = document.getElementById("tourSpeed");
 
   // Tour scopes determine which bodies (besides the closing "__end__" stop)
-  // are visited. "full" is the original Sun -> all 8 planets sequence and
-  // stays the default so existing behavior is unchanged.
+  // are visited. "full" is the Sun -> everything in PLANETS order (which is
+  // distance order, so Ceres is visited inside the asteroid belt and Pluto
+  // last) and stays the default.
   const TOUR_SCOPES = {
     full: ["sun", ...PLANETS.map((p) => p.key)],
     inner: ["mercury", "venus", "earth", "mars"],
     outer: ["jupiter", "saturn", "uranus", "neptune"],
+    dwarf: PLANETS.filter((p) => p.dwarf).map((p) => p.key),
   };
 
   // Dwell duration (ms) per stop for each speed preset. "normal" matches the
@@ -788,7 +904,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     if (key === "__end__") {
       hideInfoPanel();
       // Pull back to a wide overview shot (fixed point, nothing to track)
-      flyCameraTo(() => new THREE.Vector3(0, 0, 0), 95, 2200, () => {
+      flyCameraTo(() => new THREE.Vector3(0, 0, 0), OVERVIEW_DISTANCE, 2200, () => {
         armDwell();
       });
       return;
@@ -873,7 +989,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     stopTour();
     hideInfoPanel();
     clearFollow();
-    flyCameraTo(() => new THREE.Vector3(0, 0, 0), 90, 1200);
+    flyCameraTo(() => new THREE.Vector3(0, 0, 0), OVERVIEW_DISTANCE, 1200);
   });
 
   // ---------------------------------------------------------------------
@@ -987,6 +1103,12 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     });
 
     sunMesh.rotation.y += 0.05 * dt;
+
+    // The belt is one rigid point cloud, so "orbiting" it is a single object
+    // rotation — no per-asteroid work regardless of how many particles it has.
+    if (asteroidBelt) {
+      asteroidBelt.rotation.y += ASTEROID_BELT.driftSpeed * ORBIT_TIME_SCALE * dt;
+    }
 
     updateCameraAnim(now);
 

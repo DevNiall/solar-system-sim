@@ -42,6 +42,12 @@ const STAT_TEMPLATES = [
     key: "Moons",
     question: (name) => `How many known moons does ${name} have?`,
   },
+  {
+    // Only the dwarf planets carry a "Type" stat, so this template quietly
+    // produces nothing for the Sun and the eight planets.
+    key: "Type",
+    question: (name) => `Is ${name} a planet, or something else?`,
+  },
 ];
 
 /**
@@ -51,6 +57,14 @@ const STAT_TEMPLATES = [
 function generateQuizQuestions(sun, planets) {
   const cards = [];
   const bodies = [sun, ...planets];
+
+  // Dwarf planets (flagged `dwarf: true` in data.js) get their own per-body
+  // cards like everything else, but must be excluded from the "which PLANET
+  // is..." superlatives below — otherwise tiny, slow, distant Ceres and Pluto
+  // would become the answer to "which planet is the smallest?", teaching kids
+  // exactly the thing the 2006 reclassification was about.
+  const majorPlanets = planets.filter((p) => !p.dwarf);
+  const dwarfPlanets = planets.filter((p) => p.dwarf);
 
   for (const body of bodies) {
     const stats = body.stats || {};
@@ -78,9 +92,17 @@ function generateQuizQuestions(sun, planets) {
     }
   }
 
-  // Comparison questions computed across all planets (Sun excluded — these
-  // are planet-to-planet comparisons).
-  const withMoons = planets
+  if (dwarfPlanets.length > 0) {
+    cards.push({
+      question: "Which bodies in this simulation are dwarf planets rather than full planets?",
+      answer: dwarfPlanets.map((p) => p.name).join(" and "),
+    });
+  }
+
+  // Comparison questions computed across the eight major planets (the Sun is
+  // excluded because these are planet-to-planet comparisons, and the dwarf
+  // planets because the questions say "planet").
+  const withMoons = majorPlanets
     .map((p) => ({ name: p.name, moons: parseFirstNumber(p.stats?.Moons) }))
     .filter((p) => p.moons !== null);
   if (withMoons.length > 0) {
@@ -91,7 +113,7 @@ function generateQuizQuestions(sun, planets) {
     });
   }
 
-  const withDiameter = planets
+  const withDiameter = majorPlanets
     .map((p) => ({ name: p.name, diameter: parseFirstNumber(p.stats?.Diameter) }))
     .filter((p) => p.diameter !== null);
   if (withDiameter.length > 0) {
@@ -107,7 +129,7 @@ function generateQuizQuestions(sun, planets) {
     });
   }
 
-  const withYear = planets
+  const withYear = majorPlanets
     .map((p) => ({ name: p.name, days: yearLengthToDays(p.stats?.["Year length"]) }))
     .filter((p) => p.days !== null);
   if (withYear.length > 0) {
@@ -123,7 +145,7 @@ function generateQuizQuestions(sun, planets) {
     });
   }
 
-  const withDay = planets
+  const withDay = majorPlanets
     .map((p) => ({ name: p.name, hours: dayLengthToHours(p.stats?.["Day length"]) }))
     .filter((p) => p.hours !== null);
   if (withDay.length > 0) {

@@ -353,6 +353,7 @@
         <option value="full" selected>Full Tour</option>
         <option value="inner">Inner Planets</option>
         <option value="outer">Outer Planets</option>
+        <option value="dwarf">Dwarf Planets</option>
       </select>
       <select class="pill" id="tourSpeed" title="Tour pace">
         <option value="relaxed">Relaxed</option>
@@ -406,13 +407,15 @@
     <div class="box">
       <button class="closeBtn" id="aboutCloseBtn">×</button>
       <h2>About this simulation</h2>
-      <p>This is an educational, stylized model of the solar system built with Three.js. It is designed to teach real astronomy concepts — relative orbital speeds, planet ordering, and comparative facts — while remaining visually legible in a single viewport.</p>
+      <p>This is an educational, stylized model of the solar system built with Three.js. It is designed to teach real astronomy concepts — relative orbital speeds, planet ordering, and comparative facts — while remaining visually legible in a single viewport. It covers the Sun, the eight planets, the asteroid belt, and the dwarf planets Ceres and Pluto.</p>
       <p><strong>What is NOT physically accurate:</strong></p>
       <ul>
         <li>Planet sizes are scaled up (especially the smaller ones) so they're visible at all — the Sun would otherwise dwarf every planet on screen.</li>
         <li>Orbital distances use a compressed non-linear scale so Neptune isn't kilometers away from Mercury on your screen.</li>
         <li>Orbital speeds preserve <em>relative</em> ordering (inner planets orbit faster than outer ones, matching Kepler's laws) but are sped up dramatically and not in true proportion.</li>
-        <li>Axial tilts and orbital inclinations are simplified or omitted, and only the best-known moons are shown — their sizes, distances, and orbit speeds are exaggerated even more than the planets' so they're visible at all.</li>
+        <li>Axial tilts are omitted, and orbital inclinations are simplified: the eight planets are drawn in one flat plane, and only the dwarf planets Ceres and Pluto get a tilted orbit, because that tilt is one of the things that makes them notable.</li>
+        <li>Only the best-known moons are shown — their sizes, distances, and orbit speeds are exaggerated even more than the planets' so they're visible at all. That means a big moon like Titan can look larger on screen than the dwarf planet Ceres, even though Ceres' scale is the (less exaggerated) planet one.</li>
+        <li>The asteroid belt is a decorative particle field, not a simulation: it sits at the belt's real distance between Mars and Jupiter, but the particles are drawn far larger than real asteroids and the belt is really mostly empty space — spacecraft fly through it without ever coming close to a rock.</li>
       </ul>
       <p>Facts about diameters, day/year lengths, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of the visualization is exaggerated for teaching purposes.</p>
     </div>
