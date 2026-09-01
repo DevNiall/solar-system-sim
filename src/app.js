@@ -485,6 +485,37 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
     if (fromUserClick) {
       exitTourToFreeIfNeeded();
       flyCameraToKey(key, 1.4);
+      setUrlBody(key);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Deep-linkable state: reflect the selected body in the URL (?body=key)
+  // so a view can be bookmarked/shared. We only ever touch the URL on an
+  // explicit user selection (click) and read it once on startup, using
+  // replaceState (not pushState) so normal camera/tour navigation never
+  // creates extra back-button history entries to fight with.
+  // ---------------------------------------------------------------------
+  function setUrlBody(key) {
+    try {
+      const url = new URL(window.location.href);
+      if (key) {
+        url.searchParams.set("body", key);
+      } else {
+        url.searchParams.delete("body");
+      }
+      window.history.replaceState(null, "", url);
+    } catch (err) {
+      // URL API issues (e.g. unusual embedding contexts) shouldn't break the app
+      console.warn("[deep-link] failed to update URL:", err);
+    }
+  }
+
+  function getUrlBody() {
+    try {
+      return new URLSearchParams(window.location.search).get("body");
+    } catch (err) {
+      return null;
     }
   }
 
@@ -780,6 +811,17 @@ import { TEXTURES, SUN, PLANETS } from "./data.js";
 
     renderer.render(scene, camera);
   }
+
+  // ---------------------------------------------------------------------
+  // On startup, if the URL encodes a body (e.g. ?body=saturn), jump
+  // straight to that selection/view instead of the default startup view.
+  // ---------------------------------------------------------------------
+  (function applyInitialDeepLink() {
+    const initialKey = getUrlBody();
+    if (initialKey && getDataByKey(initialKey)) {
+      selectPlanet(initialKey, true);
+    }
+  })();
 
   document.getElementById("loading").remove();
   animate();

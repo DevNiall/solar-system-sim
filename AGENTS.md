@@ -13,6 +13,7 @@ Vite project (`vite.config.js`, `package.json`): `npm install && npm run dev` fo
 - `vite.config.js` sets `base: "/solar-system-sim/"` to match the GitHub Pages URL (`https://devniall.github.io/solar-system-sim/`). If the Pages URL/repo name ever changes, update `base` here.
 - Deployment: `.github/workflows/deploy.yml` builds with Vite and publishes `dist/` via `actions/deploy-pages`. Requires the repo's Pages source to be set to "GitHub Actions" (not "Deploy from a branch") in repo settings.
 - Moon data model: `src/app.js` builds `moonPivots`/`moonMeshes` arrays per planet from `p.moons` (array) or the legacy singular `p.moon` object in `src/data.js`, so adding more moons per planet doesn't require another refactor.
+- Deep-linkable selection: `setUrlBody`/`getUrlBody` in `src/app.js` sync the selected body to a `?body=<key>` query param via `history.replaceState` (no pushState, so it doesn't clutter back-button history) and `selectPlanet` is called once on startup if the URL already encodes a body. Only explicit user selection writes the URL; tour playback and manual camera drag/zoom never touch it.
 
 ## Maintaining this file
 
