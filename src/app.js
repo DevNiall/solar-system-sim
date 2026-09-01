@@ -394,6 +394,102 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   // ---------------------------------------------------------------------
+  // Touch controls (additive; mouse controls above are untouched).
+  // Single-finger drag -> orbit. Two-finger drag -> pinch-zoom is treated
+  // as the primary two-finger gesture; two-finger pan is intentionally not
+  // supported since disambiguating pinch vs. pan reliably on a small
+  // tablet viewport added complexity out of proportion to the benefit for
+  // this age group. Tap (no significant finger movement) -> select planet,
+  // reusing the same drag-distance threshold as the mouse click handler.
+  // ---------------------------------------------------------------------
+  let touchMode = null; // "orbit" | "pinch" | null
+  let touchLastX = 0;
+  let touchLastY = 0;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchDragDistance = 0;
+  let pinchStartDist = 0;
+  let pinchStartRadius = 0;
+
+  function touchMidpoint(t0, t1) {
+    return {
+      x: (t0.clientX + t1.clientX) / 2,
+      y: (t0.clientY + t1.clientY) / 2,
+    };
+  }
+  function touchDistance(t0, t1) {
+    return Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+  }
+
+  renderer.domElement.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        touchMode = "orbit";
+        touchStartX = touchLastX = e.touches[0].clientX;
+        touchStartY = touchLastY = e.touches[0].clientY;
+        touchDragDistance = 0;
+      } else if (e.touches.length === 2) {
+        touchMode = "pinch";
+        pinchStartDist = touchDistance(e.touches[0], e.touches[1]);
+        pinchStartRadius = camSpherical.radius;
+        const mid = touchMidpoint(e.touches[0], e.touches[1]);
+        touchLastX = mid.x;
+        touchLastY = mid.y;
+      }
+    },
+    { passive: false }
+  );
+
+  renderer.domElement.addEventListener(
+    "touchmove",
+    (e) => {
+      e.preventDefault();
+      if (touchMode === "orbit" && e.touches.length === 1) {
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        const dx = x - touchLastX;
+        const dy = y - touchLastY;
+        touchLastX = x;
+        touchLastY = y;
+        touchDragDistance = Math.hypot(x - touchStartX, y - touchStartY);
+        exitTourToFreeIfNeeded();
+        clearFollow();
+        camSpherical.theta -= dx * rotateSpeed;
+        camSpherical.phi -= dy * rotateSpeed;
+        updateCameraFromSpherical();
+      } else if (touchMode === "pinch" && e.touches.length === 2) {
+        exitTourToFreeIfNeeded();
+        const dist = touchDistance(e.touches[0], e.touches[1]);
+        const scale = pinchStartDist / Math.max(dist, 1e-6);
+        camSpherical.radius = pinchStartRadius * scale;
+        updateCameraFromSpherical();
+      }
+    },
+    { passive: false }
+  );
+
+  function onTouchEnd(e) {
+    if (e.touches.length === 0) {
+      if (touchMode === "orbit" && touchDragDistance <= 6) {
+        const touch = e.changedTouches[0];
+        if (touch) selectAtScreenPoint(touch.clientX, touch.clientY);
+      }
+      touchMode = null;
+    } else if (e.touches.length === 1) {
+      // Went from pinch/orbit down to one finger; restart orbit tracking
+      // from here rather than jumping using stale coordinates.
+      touchMode = "orbit";
+      touchStartX = touchLastX = e.touches[0].clientX;
+      touchStartY = touchLastY = e.touches[0].clientY;
+      touchDragDistance = 0;
+    }
+  }
+  renderer.domElement.addEventListener("touchend", onTouchEnd, { passive: false });
+  renderer.domElement.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+  // ---------------------------------------------------------------------
   // Raycasting / selection
   // ---------------------------------------------------------------------
   const raycaster = new THREE.Raycaster();
@@ -406,11 +502,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     return found ? found.data : null;
   }
 
-  function onClick(e) {
-    // ignore clicks that are actually the end of a drag
-    if (dragDistance > 6) return;
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  function selectAtScreenPoint(clientX, clientY) {
+    mouse.x = (clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const selectable = [sunMesh, ...planetObjects.map((o) => o.mesh)];
     const intersects = raycaster.intersectObjects(selectable, false);
@@ -418,6 +512,12 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       const key = intersects[0].object.userData.dataKey;
       selectPlanet(key, true);
     }
+  }
+
+  function onClick(e) {
+    // ignore clicks that are actually the end of a drag
+    if (dragDistance > 6) return;
+    selectAtScreenPoint(e.clientX, e.clientY);
   }
 
   let dragStartX = 0,
