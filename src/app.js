@@ -210,9 +210,11 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // ---------------------------------------------------------------------
   // Selective-bloom layer
   //
-  // Objects on BLOOM_LAYER are the only things drawn into the bloom pass (see
-  // "Postprocessing" further down), so the Sun can glow hard without the
-  // planet textures, orbit rings, asteroid belt or starfield getting smeared.
+  // Objects on BLOOM_LAYER are the only things that emit into the bloom pass
+  // (see "Postprocessing" further down) — everything else is rendered black
+  // there, so it occludes the glow without contributing to it. That lets the
+  // Sun glow hard without the planet textures, orbit rings, asteroid belt or
+  // starfield getting smeared.
   // `enableBloom(obj)` is the single entry point: anything emissive added
   // later (a glowing accent, a comet, a spacecraft thruster) only has to call
   // it to join the effect.
@@ -1265,25 +1267,30 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   //   bloomComposer  scene -> UnrealBloomPass -> offscreen target
   //   finalComposer  scene -> mix(base, bloom) -> OutputPass -> screen
   //
-  // The selectivity comes from BLOOM_LAYER: for the bloom pass the camera is
-  // switched to that layer only, so the render is just the Sun and its corona
-  // on black and nothing else can contribute glare. A single whole-scene
-  // bloom is not usable here — the sunlight is a decay-free PointLight at
-  // intensity 2.2, so lit planet faces sit above any threshold that still
-  // catches the Sun, and they smear.
+  // The selectivity comes from BLOOM_LAYER, via the "darken everything else"
+  // variant of the technique: the bloom pass renders the WHOLE scene, but
+  // every object not on BLOOM_LAYER is temporarily swapped to a black stand-in
+  // material (see darkenNonBloomed/restoreMaterials below). So only the Sun
+  // and its corona contribute light to the blur, while planets, moons, rings
+  // and asteroids still write depth and still paint black — which is what
+  // makes anything passing in front of the Sun correctly occlude the halo.
   //
-  // Known, accepted trade-off: because occluders are not drawn into the bloom
-  // pass, the halo bleeds over a planet transiting in front of the Sun rather
-  // than being hidden by it. That matches how veiling glare behaves in a real
-  // lens, and it avoids the per-frame material swap the "darken everything
-  // else" variant of this technique needs.
+  // Restricting the camera to BLOOM_LAYER instead (the cheaper variant) is
+  // what caused the "Sun draws on top of the planets" bug: with no occluders
+  // in the bloom render, the halo was composited over every pixel near the
+  // Sun regardless of depth, so a transiting planet, moon, asteroid or orbit
+  // ring was painted over by the Sun. Do not go back to that.
+  //
+  // A single whole-scene bloom is not usable here either — the sunlight is a
+  // decay-free PointLight at intensity 2.2, so lit planet faces sit above any
+  // threshold that still catches the Sun, and they smear.
   // ---------------------------------------------------------------------
   const BLOOM_PARAMS = {
     // Tuned against the overview framing and a close pass on the Sun: enough
     // halo to read as a star, not enough to veil planets or the UI beneath it.
     strength: 0.85,
     radius: 0.15,
-    threshold: 0.0, // only the Sun is in this pass, so let all of it bloom
+    threshold: 0.0, // everything but the Sun is blacked out, so bloom all of it
   };
 
   // Per-mip weights for the bloom composite. UnrealBloomPass sums five
@@ -1380,11 +1387,56 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
   setComposerSize(window.innerWidth, window.innerHeight);
 
+  // Occlusion for the bloom pass.
+  //
+  // Everything that is NOT on BLOOM_LAYER is swapped to a black stand-in for
+  // the duration of the bloom render, then swapped back. The stand-in is a
+  // clone of the object's real material with its colours forced to black, so
+  // it keeps the exact silhouette that the real render produces — point size
+  // and sprite alpha for the asteroid belt and starfield, alpha maps and
+  // opacity for Saturn's rings and the orbit lines, double-sidedness, etc.
+  // (A semi-transparent occluder therefore only partly dims the Sun behind
+  // it, which is the right answer for a 45%-opacity orbit line.)
+  //
+  // Clones are cached by source material, so this is a pointer swap per
+  // object per frame, not an allocation.
+  const bloomLayerTest = new THREE.Layers();
+  bloomLayerTest.set(BLOOM_LAYER);
+  const darkMaterials = new Map(); // real material -> black clone
+  const swappedMaterials = new Map(); // object -> real material
+
+  function blackVersionOf(material) {
+    let dark = darkMaterials.get(material);
+    if (!dark) {
+      dark = material.clone();
+      if (dark.color) dark.color.setHex(0x000000);
+      if (dark.emissive) dark.emissive.setHex(0x000000);
+      if (dark.emissiveMap) dark.emissiveMap = null;
+      darkMaterials.set(material, dark);
+    }
+    return dark;
+  }
+
+  function darkenNonBloomed(obj) {
+    if (!obj.material || obj.layers.test(bloomLayerTest)) return;
+    swappedMaterials.set(obj, obj.material);
+    obj.material = Array.isArray(obj.material)
+      ? obj.material.map(blackVersionOf)
+      : blackVersionOf(obj.material);
+  }
+
+  function restoreMaterials() {
+    swappedMaterials.forEach((material, obj) => {
+      obj.material = material;
+    });
+    swappedMaterials.clear();
+  }
+
   // Draws the frame: bloom-only pass first, then the composited full scene.
   function renderFrame() {
-    camera.layers.set(BLOOM_LAYER);
+    scene.traverse(darkenNonBloomed);
     bloomComposer.render();
-    camera.layers.set(0); // back to the default layer for the real render
+    restoreMaterials();
     finalComposer.render();
   }
 
