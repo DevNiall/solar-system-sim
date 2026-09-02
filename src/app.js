@@ -3,6 +3,11 @@
 // come from data.js (also an ES module).
 
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { TEXTURES, SUN, PLANETS, ASTEROID_BELT } from "./data.js";
 import { generateQuizQuestions, shuffle } from "./quiz.js";
 
@@ -203,7 +208,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   scene.add(sunLight);
 
   // ---------------------------------------------------------------------
-  // Sun (textured, with a glow sprite standing in for bloom postprocessing)
+  // Selective-bloom layer
+  //
+  // Objects on BLOOM_LAYER are the only things drawn into the bloom pass (see
+  // "Postprocessing" further down), so the Sun can glow hard without the
+  // planet textures, orbit rings, asteroid belt or starfield getting smeared.
+  // `enableBloom(obj)` is the single entry point: anything emissive added
+  // later (a glowing accent, a comet, a spacecraft thruster) only has to call
+  // it to join the effect.
+  // ---------------------------------------------------------------------
+  const BLOOM_LAYER = 1;
+  function enableBloom(obj) {
+    obj.layers.enable(BLOOM_LAYER);
+  }
+
+  // ---------------------------------------------------------------------
+  // Sun (textured sphere + corona shell; the halo itself is real bloom
+  // postprocessing, applied to everything on BLOOM_LAYER)
   // ---------------------------------------------------------------------
   const sunGeo = new THREE.SphereGeometry(SUN.radius, 48, 48);
   const sunMat = new THREE.MeshBasicMaterial({ color: SUN.color });
@@ -215,51 +236,26 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   sunMesh.rotation.x = (SUN.axialTilt || 0) * (Math.PI / 180);
   sunMesh.userData.isSelectable = true;
   sunMesh.userData.dataKey = "sun";
+  enableBloom(sunMesh);
   scene.add(sunMesh);
   applyTexture(SUN.texture, sunMat, "map", true);
 
-  // Soft volumetric-looking corona via a backside sphere...
+  // Soft volumetric-looking corona via a backside sphere. It is deliberately
+  // faint on its own — its real job is to give UnrealBloomPass a wider,
+  // softer-edged source than the hard disc of the Sun itself, which is what
+  // turns the bloom into a graded halo instead of a uniform ring.
   const glowGeo = new THREE.SphereGeometry(SUN.radius * 1.35, 32, 32);
   const glowMat = new THREE.MeshBasicMaterial({
     color: SUN.emissive,
     transparent: true,
-    opacity: 0.22,
+    opacity: 0.25,
     side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
-  scene.add(new THREE.Mesh(glowGeo, glowMat));
-
-  // ...plus a camera-facing radial-gradient sprite for a bloom-like glow.
-  // This avoids needing the ES-module-only three.js postprocessing/EffectComposer
-  // stack, keeping the app a plain <script> / no-build-step setup.
-  function buildGlowSprite() {
-    const size = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const gradient = ctx.createRadialGradient(
-      size / 2, size / 2, 0,
-      size / 2, size / 2, size / 2
-    );
-    gradient.addColorStop(0, "rgba(255,240,200,0.9)");
-    gradient.addColorStop(0.25, "rgba(255,210,120,0.55)");
-    gradient.addColorStop(0.6, "rgba(255,170,60,0.18)");
-    gradient.addColorStop(1, "rgba(255,140,40,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
-    const tex = new THREE.CanvasTexture(canvas);
-    const mat = new THREE.SpriteMaterial({
-      map: tex,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const sprite = new THREE.Sprite(mat);
-    const scale = SUN.radius * 6;
-    sprite.scale.set(scale, scale, 1);
-    scene.add(sprite);
-  }
-  buildGlowSprite();
+  const sunCorona = new THREE.Mesh(glowGeo, glowMat);
+  enableBloom(sunCorona);
+  scene.add(sunCorona);
 
   // ---------------------------------------------------------------------
   // Orbit ring helper
@@ -1139,12 +1135,144 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   });
 
   // ---------------------------------------------------------------------
+  // Postprocessing: selective bloom for the Sun
+  //
+  // Two composers, the standard three.js "selective bloom" arrangement:
+  //
+  //   bloomComposer  scene -> UnrealBloomPass -> offscreen target
+  //   finalComposer  scene -> mix(base, bloom) -> OutputPass -> screen
+  //
+  // The selectivity comes from BLOOM_LAYER: for the bloom pass the camera is
+  // switched to that layer only, so the render is just the Sun and its corona
+  // on black and nothing else can contribute glare. A single whole-scene
+  // bloom is not usable here — the sunlight is a decay-free PointLight at
+  // intensity 2.2, so lit planet faces sit above any threshold that still
+  // catches the Sun, and they smear.
+  //
+  // Known, accepted trade-off: because occluders are not drawn into the bloom
+  // pass, the halo bleeds over a planet transiting in front of the Sun rather
+  // than being hidden by it. That matches how veiling glare behaves in a real
+  // lens, and it avoids the per-frame material swap the "darken everything
+  // else" variant of this technique needs.
+  // ---------------------------------------------------------------------
+  const BLOOM_PARAMS = {
+    // Tuned against the overview framing and a close pass on the Sun: enough
+    // halo to read as a star, not enough to veil planets or the UI beneath it.
+    strength: 0.85,
+    radius: 0.15,
+    threshold: 0.0, // only the Sun is in this pass, so let all of it bloom
+  };
+
+  // Per-mip weights for the bloom composite. UnrealBloomPass sums five
+  // progressively blurrier mips; left at its defaults the widest two paint a
+  // dull brown haze over half the inner system (the planets and starfield
+  // near the Sun visibly grey out). Rolling the wide mips off keeps the tight,
+  // bright halo around the Sun and drops the full-screen veil.
+  const BLOOM_MIP_WEIGHTS = [1.0, 0.9, 0.45, 0.2, 0.1];
+
+  const renderPass = new RenderPass(scene, camera);
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    BLOOM_PARAMS.strength,
+    BLOOM_PARAMS.radius,
+    BLOOM_PARAMS.threshold
+  );
+  bloomPass.bloomTintColors.forEach((tint, i) => {
+    const w = BLOOM_MIP_WEIGHTS[i] != null ? BLOOM_MIP_WEIGHTS[i] : 1;
+    tint.set(w, w, w);
+  });
+
+  const bloomComposer = new EffectComposer(renderer);
+  bloomComposer.renderToScreen = false;
+  bloomComposer.addPass(renderPass);
+  bloomComposer.addPass(bloomPass);
+
+  // Composites the bloom target back over the full-scene render with a
+  // "screen" blend rather than a straight add. A straight add saturates
+  // anything already bright to flat white: at close range it flattens the
+  // Sun's granulation into a solid yellow disc, and it erases a planet
+  // transiting in front of the Sun. Screen leaves the halo identical over
+  // dark sky (where base ~= 0 the two are the same) while preserving detail
+  // in the highlights. The max() guard keeps HDR values above 1.0 — lit
+  // planet faces, since the sunlight is a decay-free intensity-2.2 light —
+  // from being pulled down by the blend.
+  const mixPass = new ShaderPass(
+    new THREE.ShaderMaterial({
+      uniforms: {
+        baseTexture: { value: null },
+        bloomTexture: { value: bloomComposer.renderTarget2.texture },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D baseTexture;
+        uniform sampler2D bloomTexture;
+        varying vec2 vUv;
+        void main() {
+          vec4 base = texture2D(baseTexture, vUv);
+          vec3 bloom = texture2D(bloomTexture, vUv).rgb;
+          vec3 screened = 1.0 - (1.0 - clamp(base.rgb, 0.0, 1.0)) * (1.0 - bloom);
+          gl_FragColor = vec4(max(base.rgb, screened), base.a);
+        }
+      `,
+      defines: {},
+    }),
+    "baseTexture"
+  );
+  mixPass.needsSwap = true;
+
+  // EffectComposer's default target is single-sampled, which would silently
+  // throw away the renderer's `antialias: true` — every planet limb and orbit
+  // ring would come back jagged the moment we stopped drawing to the canvas
+  // directly. Giving the final chain a multisampled target keeps the edges as
+  // smooth as they were before postprocessing. (`samples` is a no-op on
+  // WebGL1, where multisampled render targets don't exist.)
+  const drawSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const finalTarget = new THREE.WebGLRenderTarget(drawSize.width, drawSize.height, {
+    type: THREE.HalfFloatType,
+    samples: renderer.capabilities.isWebGL2 ? 4 : 0,
+  });
+
+  const finalComposer = new EffectComposer(renderer, finalTarget);
+  finalComposer.addPass(renderPass);
+  finalComposer.addPass(mixPass);
+  // Composer targets are linear; OutputPass does the tone-mapping / sRGB
+  // conversion that renderer.render() would otherwise have done for us.
+  finalComposer.addPass(new OutputPass());
+
+  function setComposerSize(width, height) {
+    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    // The bloom chain only ever produces a blur, so it runs at half
+    // resolution: same halo, a quarter of the fill cost of the extra pass.
+    bloomComposer.setPixelRatio(pixelRatio * 0.5);
+    finalComposer.setPixelRatio(pixelRatio);
+    bloomComposer.setSize(width, height);
+    finalComposer.setSize(width, height);
+  }
+  setComposerSize(window.innerWidth, window.innerHeight);
+
+  // Draws the frame: bloom-only pass first, then the composited full scene.
+  function renderFrame() {
+    camera.layers.set(BLOOM_LAYER);
+    bloomComposer.render();
+    camera.layers.set(0); // back to the default layer for the real render
+    finalComposer.render();
+  }
+
+  // ---------------------------------------------------------------------
   // Resize handling
   // ---------------------------------------------------------------------
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    setComposerSize(window.innerWidth, window.innerHeight);
   });
 
   // ---------------------------------------------------------------------
@@ -1197,7 +1325,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       updateCameraFromSpherical();
     }
 
-    renderer.render(scene, camera);
+    renderFrame();
   }
 
   // ---------------------------------------------------------------------

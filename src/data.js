@@ -43,7 +43,8 @@
 //   Pluto            39.48      112        11.0                 1.2
 //
 // Mercury is the one deliberate outlier: at a true 0.39 AU it would sit inside
-// the Sun's glow sprite (radius 6.5 x 1.35), so it is pushed out to 11.
+// the Sun's corona and bloom halo (sphere radius 6.5, corona 1.35x), so it is
+// pushed out to 11.
 //
 // Two hard constraints this table has to satisfy, and any future edit must
 // preserve:

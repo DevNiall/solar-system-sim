@@ -32,7 +32,7 @@ npm run preview   # optional: serve the built dist/ output locally
 - **Asteroid belt** between Mars and Jupiter: a procedural field of ~1200 particles scattered through a flattened annulus, rendered as a single `THREE.Points` cloud (one draw call) and rotated as one rigid object. It is deliberately decorative — not a thousand individually simulated bodies.
 - Moons for Earth, Mars, Jupiter, and Saturn (the Moon; Phobos & Deimos; Io, Europa, Ganymede & Callisto; Enceladus & Titan), each orbiting its planet at its own relative speed.
 - Earth gets a day-map, specular map (oceans reflect more than land), and an additive cloud layer; Saturn gets a real translucent ring texture.
-- A soft sun glow (backside corona sphere + additive-blended radial-gradient sprite) stands in for full bloom postprocessing while keeping the app a plain-`<script>`, no-build-step setup.
+- A real bloom halo on the Sun: `UnrealBloomPass` through an `EffectComposer`, applied *selectively* (only objects on the bloom layer are drawn into the bloom pass) so the star glows without smearing the planets, orbit rings, or starfield.
 - Starfield background: procedural points plus a real Milky Way skybox texture.
 - Free camera controls: left-drag to orbit, right-drag to pan, scroll to zoom.
 - Click any body to open an info panel with real astronomical facts (diameter, day/year length, moons, fun facts).
