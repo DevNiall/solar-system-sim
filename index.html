@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Solar System Simulator</title>
 <style>
   :root {
@@ -18,8 +18,13 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #e8ecf7;
   }
-  #app { position: relative; width: 100vw; height: 100vh; }
+  #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
   canvas { display: block; }
+
+  /* `.wide-only` label fragments are dropped on narrow screens, and the
+     `.pointer-*-only` hint variants swap mouse wording for touch wording.
+     Both are driven by the responsive block at the end of this stylesheet. */
+  .pointer-coarse-only { display: none; }
 
   #topbar {
     position: absolute;
@@ -112,22 +117,37 @@
 
   #infoPanel {
     position: absolute;
-    top: 90px;
+    /* --topbar-h is published by src/app.js so the panel always clears the
+       topbar, which grows taller as the controls wrap on narrow screens. */
+    top: calc(14px + var(--topbar-h, 76px));
     right: 14px;
-    width: 300px;
+    /* border-box: 338px here == the old 300px content width + 18px padding
+       either side, now that the padding lives on .panel-body. */
+    width: 338px;
+    box-sizing: border-box;
     max-width: 42vw;
     background: rgba(10, 12, 24, 0.72);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(120, 150, 255, 0.3);
     border-radius: 12px;
-    padding: 16px 18px;
     z-index: 10;
     transform: translateX(120%);
     opacity: 0;
     transition: transform 0.35s ease, opacity 0.35s ease;
     pointer-events: none;
     max-height: 70vh;
+    /* The panel itself never scrolls, so the close button stays put; only
+       .panel-body scrolls. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #infoPanel .panel-body {
+    padding: 16px 18px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
   }
   #infoPanel.visible {
     transform: translateX(0);
@@ -226,6 +246,8 @@
     display: none;
     align-items: center;
     justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
     z-index: 30;
   }
   #aboutModal.visible { display: flex; }
@@ -233,17 +255,27 @@
     background: #10131f;
     border: 1px solid rgba(120, 150, 255, 0.3);
     border-radius: 14px;
-    padding: 26px 30px;
-    max-width: 480px;
-    /* short/landscape viewports (tablets, small laptops) can't fit the full
-       text, so scroll the box rather than letting it overflow the screen and
-       push the close button out of reach */
-    max-height: 82vh;
-    overflow-y: auto;
+    /* border-box, so this is the same rendered width as the old
+       content-box `max-width: 480px` + 30px side padding. */
+    max-width: 542px;
     line-height: 1.55;
     font-size: 13.5px;
     color: #d7dcf2;
     position: relative;
+    box-sizing: border-box;
+    max-height: 100%;
+    /* The box itself never scrolls, so the close button stays
+       reachable; only .box-body scrolls. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #aboutModal .box-body {
+    padding: 26px 30px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
   }
   #aboutModal h2 { margin-top: 0; font-size: 18px; }
   #aboutModal .closeBtn {
@@ -265,6 +297,8 @@
     display: none;
     align-items: center;
     justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
     z-index: 30;
   }
   #quizModal.visible { display: flex; }
@@ -272,15 +306,28 @@
     background: #10131f;
     border: 1px solid rgba(120, 150, 255, 0.3);
     border-radius: 14px;
-    padding: 26px 30px;
-    max-width: 460px;
-    width: 88vw;
-    max-height: 82vh;
-    overflow-y: auto;
+    /* border-box, so this is the same rendered width as the old
+       content-box `max-width: 460px` + 30px side padding. */
+    max-width: 522px;
+    width: 100%;
     line-height: 1.55;
     font-size: 13.5px;
     color: #d7dcf2;
     position: relative;
+    box-sizing: border-box;
+    max-height: 100%;
+    /* The box itself never scrolls, so the close button stays
+       reachable; only .box-body scrolls. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #quizModal .box-body {
+    padding: 26px 30px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
   }
   #quizModal h2 { margin-top: 0; font-size: 18px; }
   #quizModal .closeBtn {
@@ -353,14 +400,213 @@
     pointer-events: none;
   }
 
+  /* ---------------------------------------------------------------------
+     Responsive / touch layer.
+
+     The desktop layout above is the baseline; everything below only adapts
+     it for smaller viewports and finger input. Three independent axes:
+
+       1. `pointer: coarse`  -> touch-target sizing (any viewport size).
+       2. `max-width: 720px` -> phone reflow: stacked topbar, info panel
+          becomes a bottom sheet, tour bar spans the width.
+       3. `max-height: 520px`-> short/landscape phones: the info panel goes
+          back to a side sheet because there is no vertical room.
+
+     Bottom-anchored chrome (tour bar, About button, info sheet) shares one
+     band at the bottom of the screen, so the rules below use sibling
+     selectors on `#tourBar.visible` to move/hide the others while a tour is
+     running. That is why the DOM order is tourBar -> aboutBtn -> infoPanel
+     -> hint; do not reorder those without revisiting these rules.
+     `--tourbar-h` and `--topbar-h` are kept in sync from src/app.js.
+     --------------------------------------------------------------------- */
+
+  /* The tour bar owns the bottom band while a tour is running: as the window
+     narrows it reaches the right-hand hint text, and below 900px it also
+     reaches the About button, so both step aside.
+
+     The hint threshold is measured, not guessed: the tour bar is a fixed 515px
+     (its widest label, "Tour complete", still fits the stop-label's min-width)
+     and is centred, while the hint is 359px wide inset 14px from the right, so
+     they first touch at 515 + 2 * (14 + 359) = 1261px. Hiding at 1260px and
+     below therefore leaves every genuinely desktop-sized window — 1280px
+     laptops included — exactly as it was. */
+  @media (max-width: 1260px) {
+    #tourBar.visible ~ #hint { display: none; }
+  }
+
+  /* Same idea for the About button, which sits bottom-left: it first touches
+     the centred tour bar at 845px. 900px keeps a deliberate margin here
+     because, unlike the hint, no standard desktop width falls in the gap —
+     and below 720px the tour bar goes full-width and would cover the button
+     outright, so this rule has to be in force well before then. */
+  @media (max-width: 900px) {
+    #tourBar.visible ~ #aboutBtn { display: none; }
+  }
+
+  /* --- Touch targets: apply on any touch device, regardless of width. --- */
+  @media (pointer: coarse) {
+    button.pill, select.pill {
+      min-height: 44px;
+      padding: 10px 16px;
+      font-size: 14px;
+    }
+    .closeBtn {
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #infoPanel .closeBtn { top: 4px; right: 4px; font-size: 24px; }
+    #aboutModal .closeBtn, #quizModal .closeBtn { top: 6px; right: 8px; font-size: 26px; }
+    /* Keep the close button clear of the heading it sits next to. */
+    #infoPanel h2, #aboutModal h2, #quizModal h2 { padding-right: 40px; }
+    #infoPanel .tagline { font-size: 13px; }
+    #infoPanel dl, #infoPanel .facts { font-size: 14px; }
+    #infoPanel .facts { line-height: 1.55; }
+    #aboutModal .box, #quizModal .box { font-size: 15px; }
+    .quizQuestion { font-size: 17px; }
+    .quizAnswer { font-size: 15px; }
+    .quizProgress { font-size: 13px; }
+    #hint { font-size: 12px; }
+    .pointer-fine-only { display: none; }
+    .pointer-coarse-only { display: inline; }
+  }
+
+  /* --- Phone-sized viewports: reflow the chrome. --- */
   @media (max-width: 720px) {
-    #infoPanel { width: 78vw; max-width: 78vw; top: 80px; }
-    #controls { max-width: 100vw; justify-content: flex-start; margin-top: 8px; }
-    #topbar { flex-direction: column; gap: 8px; }
+    #topbar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      top: 10px;
+      left: calc(10px + env(safe-area-inset-left));
+      right: calc(10px + env(safe-area-inset-right));
+    }
+    #title { align-self: flex-start; padding: 8px 14px; }
+    #title h1 { font-size: 15px; }
+    /* The subtitle repeats what the About modal says; drop it to buy back
+       vertical space on small screens. */
+    #title p { display: none; }
+    #controls { max-width: none; justify-content: flex-start; }
+    .wide-only { display: none; }
     #hint { display: none; }
     /* the controls stack into narrow rows here, so a left border would read
        as clutter rather than as a group separator */
     .control-group { padding-left: 0; border-left: none; }
+
+    /* While a tour is running, the topbar's tour-setup row is dead weight —
+       both selects are disabled by src/app.js for the duration and the tour
+       bar already owns Prev/Pause/Next/Exit. On a phone that row is a whole
+       ~90px band of screen, so hand it back to the info sheet. `.tour-setup`
+       is hidden via #app.tour-active because #topbar precedes #tourBar in the
+       DOM, so the sibling selectors used elsewhere cannot reach backwards. */
+    #app.tour-active .tour-setup { display: none; }
+
+    /* Info panel becomes a bottom sheet: it can no longer collide with the
+       (now much taller) stacked topbar. */
+    #infoPanel {
+      top: auto;
+      bottom: calc(68px + env(safe-area-inset-bottom));
+      left: calc(10px + env(safe-area-inset-left));
+      right: calc(10px + env(safe-area-inset-right));
+      width: auto;
+      max-width: none;
+      /* Never taller than the room actually left under the topbar: on a small
+         phone the stacked topbar can be a third of the screen, so a plain
+         `44vh` would slide the sheet up underneath it. The 100px covers the
+         sheet's own 68px bottom offset plus a gap at either end. */
+      max-height: min(44vh, calc(100dvh - var(--topbar-h, 140px) - 100px));
+      border-radius: 14px;
+      transform: translateY(140%);
+    }
+    #infoPanel .panel-body { padding: 14px 16px; }
+    #infoPanel.visible { transform: translateY(0); }
+    #infoPanel h2 { font-size: 18px; }
+
+    /* Sheet sits above the tour bar while a tour is running, and is squeezed
+       between it and the topbar — both of which wrap to a variable number of
+       rows, hence the two measured custom properties. */
+    #tourBar.visible ~ #infoPanel {
+      bottom: calc(22px + var(--tourbar-h, 90px) + env(safe-area-inset-bottom));
+      max-height: min(
+        40vh,
+        calc(100dvh - var(--topbar-h, 140px) - var(--tourbar-h, 90px) - 56px)
+      );
+    }
+
+    #aboutBtn {
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      left: calc(10px + env(safe-area-inset-left));
+    }
+
+    /* Full-width tour bar so all five controls stay on screen. */
+    #tourBar {
+      left: calc(10px + env(safe-area-inset-left));
+      right: calc(10px + env(safe-area-inset-right));
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      transform: translateY(180%);
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 18px;
+    }
+    #tourBar.visible { transform: translateY(0); }
+    #tourBar .stop-label { min-width: 60px; }
+
+    #aboutModal, #quizModal { padding: 12px; }
+    #aboutModal .box-body, #quizModal .box-body { padding: 20px 18px; }
+  }
+
+  /* Below ~560px the tour label needs its own row above the buttons. */
+  @media (max-width: 560px) {
+    #tourBar .stop-label {
+      order: -1;
+      flex-basis: 100%;
+      text-align: center;
+    }
+    #tourBar button.pill { padding-left: 12px; padding-right: 12px; font-size: 13px; }
+  }
+
+  /* Below ~400px the four tour buttons no longer fit a row at their natural
+     widths and wrap to two, costing ~50px of the little height these screens
+     have. Sharing the row equally keeps them on one line; `min-height` from
+     the coarse-pointer block still guarantees a 44px tap target. */
+  @media (max-width: 400px) {
+    #tourBar { gap: 6px; }
+    #tourBar button.pill {
+      flex: 1 1 0;
+      min-width: 0;
+      padding-left: 4px;
+      padding-right: 4px;
+      font-size: 12.5px;
+      white-space: nowrap;
+    }
+  }
+
+  /* --- Short viewports (landscape phones): no room for a bottom sheet. --- */
+  @media (max-width: 900px) and (max-height: 520px) {
+    /* Vertical space is the scarce resource here, so put the title and the
+       controls back side by side and keep the info panel on the right. */
+    #topbar { flex-direction: row; align-items: flex-start; }
+    #title p { display: none; }
+    #controls { max-width: 52vw; justify-content: flex-end; }
+    #infoPanel {
+      top: calc(10px + var(--topbar-h, 96px));
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      left: auto;
+      right: calc(10px + env(safe-area-inset-right));
+      width: 320px;
+      max-width: 50vw;
+      max-height: none;
+      transform: translateX(120%);
+    }
+    #infoPanel.visible { transform: translateX(0); }
+    #tourBar.visible ~ #infoPanel {
+      bottom: calc(22px + var(--tourbar-h, 64px) + env(safe-area-inset-bottom));
+      max-height: none;
+    }
   }
 </style>
 </head>
@@ -374,18 +620,18 @@
       <p>Sizes &amp; distances are compressed for legibility — not to scale. See "About" for details.</p>
     </div>
     <div id="controls">
-      <select class="pill" id="tourScope" title="Tour scope">
+      <select class="pill tour-setup" id="tourScope" title="Tour scope">
         <option value="full" selected>Full Tour</option>
         <option value="inner">Inner Planets</option>
         <option value="outer">Outer Planets</option>
         <option value="dwarf">Dwarf Planets</option>
       </select>
-      <select class="pill" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
-        <option value="relaxed">Relaxed Pace</option>
-        <option value="normal" selected>Normal Pace</option>
-        <option value="quick">Quick Pace</option>
+      <select class="pill tour-setup" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
+        <option value="relaxed">Relaxed</option>
+        <option value="normal" selected>Normal</option>
+        <option value="quick">Quick</option>
       </select>
-      <button class="pill primary" id="tourBtn">▶ Start Tour</button>
+      <button class="pill primary tour-setup" id="tourBtn">▶ Start Tour</button>
       <button class="pill" id="resetBtn">Reset View</button>
       <button class="pill" id="quizBtn">🧠 Quiz</button>
       <span class="control-group">
@@ -406,60 +652,69 @@
     </div>
   </div>
 
-  <button class="pill" id="aboutBtn">ℹ About this simulation</button>
-
   <div id="tourBar">
     <button class="pill" id="tourPrev">⏮ Prev</button>
     <button class="pill" id="tourPause">⏸ Pause</button>
     <span class="stop-label" id="tourLabel">Sun</span>
     <button class="pill" id="tourNext">Next ⏭</button>
-    <button class="pill" id="tourExit">✕ Exit Tour</button>
+    <button class="pill" id="tourExit">✕ Exit<span class="wide-only"> Tour</span></button>
   </div>
+
+  <button class="pill" id="aboutBtn">ℹ About<span class="wide-only"> this simulation</span></button>
 
   <div id="infoPanel">
-    <button class="closeBtn" id="infoCloseBtn">×</button>
-    <h2><span class="swatch" id="infoSwatch"></span><span id="infoName">—</span></h2>
-    <p class="tagline" id="infoTagline"></p>
-    <dl id="infoStats"></dl>
-    <ul class="facts" id="infoFacts"></ul>
+    <button class="closeBtn" id="infoCloseBtn" aria-label="Close info panel">×</button>
+    <div class="panel-body">
+      <h2><span class="swatch" id="infoSwatch"></span><span id="infoName">—</span></h2>
+      <p class="tagline" id="infoTagline"></p>
+      <dl id="infoStats"></dl>
+      <ul class="facts" id="infoFacts"></ul>
+    </div>
   </div>
 
-  <div id="hint">Drag to rotate · Scroll to zoom · Right-drag to pan · Click a planet for facts</div>
+  <div id="hint">
+    <span class="pointer-fine-only">Drag to rotate · Scroll to zoom · Right-drag to pan · Click a planet for facts</span>
+    <span class="pointer-coarse-only">Drag to rotate · Pinch to zoom · Tap a planet for facts</span>
+  </div>
 
   <div id="quizModal">
     <div class="box">
-      <button class="closeBtn" id="quizCloseBtn">×</button>
-      <h2>Solar System Quiz</h2>
-      <p class="quizProgress" id="quizProgress"></p>
-      <div class="quizCard">
-        <p class="quizQuestion" id="quizQuestion"></p>
-        <p class="quizAnswer" id="quizAnswer"></p>
-      </div>
-      <div class="quizActions">
-        <button class="pill primary" id="quizRevealBtn">Reveal answer</button>
-        <button class="pill" id="quizNextBtn">Next ⏭</button>
-        <button class="pill" id="quizExitBtn">✕ Exit Quiz</button>
+      <button class="closeBtn" id="quizCloseBtn" aria-label="Close quiz">×</button>
+      <div class="box-body">
+        <h2>Solar System Quiz</h2>
+        <p class="quizProgress" id="quizProgress"></p>
+        <div class="quizCard">
+          <p class="quizQuestion" id="quizQuestion"></p>
+          <p class="quizAnswer" id="quizAnswer"></p>
+        </div>
+        <div class="quizActions">
+          <button class="pill primary" id="quizRevealBtn">Reveal answer</button>
+          <button class="pill" id="quizNextBtn">Next ⏭</button>
+          <button class="pill" id="quizExitBtn">✕ Exit<span class="wide-only"> Quiz</span></button>
+        </div>
       </div>
     </div>
   </div>
 
   <div id="aboutModal">
     <div class="box">
-      <button class="closeBtn" id="aboutCloseBtn">×</button>
-      <h2>About this simulation</h2>
-      <p>This is an educational, stylized model of the solar system built with Three.js. It is designed to teach real astronomy concepts — relative orbital speeds, planet ordering, and comparative facts — while remaining visually legible in a single viewport. It covers the Sun, the eight planets, the asteroid belt, and the dwarf planets Ceres and Pluto.</p>
-      <p><strong>What is NOT physically accurate:</strong></p>
-      <ul>
-        <li>Planet sizes are scaled up (especially the smaller ones) so they're visible at all — the Sun would otherwise dwarf every planet on screen.</li>
-        <li>Orbital distances use a compressed non-linear scale so Neptune isn't kilometers away from Mercury on your screen.</li>
-        <li>Orbital speeds preserve <em>relative</em> ordering (inner planets orbit faster than outer ones, matching Kepler's laws) but are sped up dramatically and not in true proportion.</li>
-        <li>Only the best-known moons are shown — their sizes, distances, and orbit speeds are exaggerated even more than the planets' so they're visible at all. That means a big moon like Titan can look larger on screen than the dwarf planet Ceres, even though Ceres' scale is the (less exaggerated) planet one.</li>
-        <li>The asteroid belt is a decorative particle field, not a simulation: it sits at the belt's real distance between Mars and Jupiter, but the particles are drawn far larger than real asteroids and the belt is really mostly empty space — spacecraft fly through it without ever coming close to a rock.</li>
-        <li>Uranus' rings are real (13 of them), and shown at roughly the right size, but drawn far brighter than reality — they are among the darkest objects in the solar system and were only discovered in 1977. They earn their visibility here because, standing almost upright, they are what makes Uranus' extreme tilt obvious. The faint line through each planet's poles is a drawing aid marking its spin axis, not a real object.</li>
-      </ul>
-      <p>The <strong>Pause</strong> button and the <strong>speed</strong> setting only change how fast the animation plays back. Every body still moves at the same speed <em>relative</em> to every other one, so the comparisons above stay true at 0.25× and at 4×.</p>
-      <p><strong>What IS accurate:</strong> every body's <em>axial tilt</em> and <em>orbital inclination</em> are the real published angles, applied at full strength with no exaggeration — an angle, unlike a distance, costs nothing to draw truthfully. So Uranus really is rolling around on its side at 97.8°, Venus really is flipped upside-down (which is why it spins backwards), Earth's 23.4° lean stays pointing the same way all year just as the real one does, and Mercury's 7° and Pluto's 17.2° orbits really are the ones that stray furthest out of the flat plane the rest share.</p>
-      <p>Facts about diameters, day/year lengths, tilts, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of sizes, distances, and speeds is exaggerated for teaching purposes.</p>
+      <button class="closeBtn" id="aboutCloseBtn" aria-label="Close about">×</button>
+      <div class="box-body">
+        <h2>About this simulation</h2>
+        <p>This is an educational, stylized model of the solar system built with Three.js. It is designed to teach real astronomy concepts — relative orbital speeds, planet ordering, and comparative facts — while remaining visually legible in a single viewport. It covers the Sun, the eight planets, the asteroid belt, and the dwarf planets Ceres and Pluto.</p>
+        <p><strong>What is NOT physically accurate:</strong></p>
+        <ul>
+          <li>Planet sizes are scaled up (especially the smaller ones) so they're visible at all — the Sun would otherwise dwarf every planet on screen.</li>
+          <li>Orbital distances use a compressed non-linear scale so Neptune isn't kilometers away from Mercury on your screen.</li>
+          <li>Orbital speeds preserve <em>relative</em> ordering (inner planets orbit faster than outer ones, matching Kepler's laws) but are sped up dramatically and not in true proportion.</li>
+          <li>Only the best-known moons are shown — their sizes, distances, and orbit speeds are exaggerated even more than the planets' so they're visible at all. That means a big moon like Titan can look larger on screen than the dwarf planet Ceres, even though Ceres' scale is the (less exaggerated) planet one.</li>
+          <li>The asteroid belt is a decorative particle field, not a simulation: it sits at the belt's real distance between Mars and Jupiter, but the particles are drawn far larger than real asteroids and the belt is really mostly empty space — spacecraft fly through it without ever coming close to a rock.</li>
+          <li>Uranus' rings are real (13 of them), and shown at roughly the right size, but drawn far brighter than reality — they are among the darkest objects in the solar system and were only discovered in 1977. They earn their visibility here because, standing almost upright, they are what makes Uranus' extreme tilt obvious. The faint line through each planet's poles is a drawing aid marking its spin axis, not a real object.</li>
+        </ul>
+        <p>The <strong>Pause</strong> button and the <strong>speed</strong> setting only change how fast the animation plays back. Every body still moves at the same speed <em>relative</em> to every other one, so the comparisons above stay true at 0.25× and at 4×.</p>
+        <p><strong>What IS accurate:</strong> every body's <em>axial tilt</em> and <em>orbital inclination</em> are the real published angles, applied at full strength with no exaggeration — an angle, unlike a distance, costs nothing to draw truthfully. So Uranus really is rolling around on its side at 97.8°, Venus really is flipped upside-down (which is why it spins backwards), Earth's 23.4° lean stays pointing the same way all year just as the real one does, and Mercury's 7° and Pluto's 17.2° orbits really are the ones that stray furthest out of the flat plane the rest share.</p>
+        <p>Facts about diameters, day/year lengths, tilts, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of sizes, distances, and speeds is exaggerated for teaching purposes.</p>
+      </div>
     </div>
   </div>
 </div>

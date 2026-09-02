@@ -954,6 +954,28 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const tourScopeSelect = document.getElementById("tourScope");
   const tourSpeedSelect = document.getElementById("tourSpeed");
 
+  // The tour bar wraps to a variable number of rows on narrow screens, and
+  // the mobile info sheet has to sit directly above it. Publish the measured
+  // height as `--tourbar-h` so index.html's responsive rules can offset the
+  // sheet without hardcoding a guess (see the responsive block there).
+  // `--topbar-h` does the same job for the top-right info panel, which has to
+  // clear a topbar that grows as the control pills wrap.
+  const topbarEl = document.getElementById("topbar");
+  const appEl = document.getElementById("app");
+  function syncChromeHeights() {
+    const root = document.documentElement.style;
+    root.setProperty("--tourbar-h", `${Math.round(tourBar.offsetHeight)}px`);
+    if (topbarEl) {
+      root.setProperty("--topbar-h", `${Math.round(topbarEl.offsetHeight)}px`);
+    }
+  }
+  if (typeof ResizeObserver !== "undefined") {
+    const chromeObserver = new ResizeObserver(syncChromeHeights);
+    chromeObserver.observe(tourBar);
+    if (topbarEl) chromeObserver.observe(topbarEl);
+  }
+  syncChromeHeights();
+
   // Tour scopes determine which bodies (besides the closing "__end__" stop)
   // are visited. "full" is the Sun -> everything in PLANETS order (which is
   // distance order, so Ceres is visited inside the asteroid belt and Pluto
@@ -1038,6 +1060,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     clearTourTimers();
     updateTourPauseButton();
     tourBar.classList.add("visible");
+    // Lets the responsive CSS hide the (now disabled) tour-setup controls on
+    // phones; #topbar precedes #tourBar in the DOM, so a sibling selector on
+    // #tourBar.visible cannot reach it.
+    appEl?.classList.add("tour-active");
     tourBtn.textContent = "▶ Start Tour";
     if (tourScopeSelect) tourScopeSelect.disabled = true;
     if (tourSpeedSelect) tourSpeedSelect.disabled = true;
@@ -1051,6 +1077,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     clearTimeout(tourState._revealTimer);
     updateTourPauseButton();
     tourBar.classList.remove("visible");
+    appEl?.classList.remove("tour-active");
     if (tourScopeSelect) tourScopeSelect.disabled = false;
     if (tourSpeedSelect) tourSpeedSelect.disabled = false;
     clearFollow();
