@@ -25,8 +25,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // view, the "Tour complete" pull-back, and the Reset View button all use it.
   // Derived from the outermost orbit rather than hardcoded so it keeps framing
   // the system if the distance scale in data.js is retuned again. The 1.7
-  // factor leaves margin for the dwarf planets' inclined orbits, which stick
-  // further out of the ecliptic plane than any of the eight planets do.
+  // factor leaves margin for the inclined orbits — Pluto's real 17.2° tilt in
+  // particular carries it far out of the ecliptic plane at this scale.
   const OUTERMOST_ORBIT = PLANETS.reduce((max, p) => Math.max(max, p.distance), 0);
   const OVERVIEW_DISTANCE = Math.round(OUTERMOST_ORBIT * 1.7);
 
@@ -208,6 +208,11 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const sunGeo = new THREE.SphereGeometry(SUN.radius, 48, 48);
   const sunMat = new THREE.MeshBasicMaterial({ color: SUN.color });
   const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  // The Sun has an axial tilt too (7.25° to the ecliptic). Euler order XYZ
+  // evaluates as Rx * Ry, so the fixed tilt on X stays outside the spin that
+  // the animation loop accumulates on Y — the sphere spins about its tilted
+  // axis rather than tumbling.
+  sunMesh.rotation.x = (SUN.axialTilt || 0) * (Math.PI / 180);
   sunMesh.userData.isSelectable = true;
   sunMesh.userData.dataKey = "sun";
   scene.add(sunMesh);
@@ -294,24 +299,80 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   // ---------------------------------------------------------------------
+  // Spin-axis indicator: a faint line through a body's poles, living in its
+  // tilted axisGroup so it points exactly along the real rotation axis.
+  // Without it, axial tilt is invisible on smooth, near-featureless bodies
+  // (Uranus is the worst case — a plain pale-cyan ball), which would hide the
+  // single most striking real fact the tilt data encodes. Kept thin and
+  // low-opacity so it reads as a guide line at a close-up and all but
+  // disappears in the whole-system overview, and it is never added to the
+  // raycast list so it can't intercept clicks meant for the planet.
+  // ---------------------------------------------------------------------
+  function buildAxisIndicator(radius) {
+    const half = radius * 2.0;
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, -half, 0),
+      new THREE.Vector3(0, half, 0),
+    ]);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x9fb6d8,
+      transparent: true,
+      opacity: 0.38,
+    });
+    return new THREE.Line(geo, mat);
+  }
+
+  // ---------------------------------------------------------------------
   // Build planets
   // ---------------------------------------------------------------------
-  const planetObjects = []; // { data, pivot, mesh, angle }
+  const planetObjects = []; // { data, orbitGroup, pivot, axisGroup, mesh, angle }
+
+  const DEG = Math.PI / 180;
 
   PLANETS.forEach((p) => {
-    // Every body hangs off an orbit group so an inclined orbit (the dwarf
-    // planets) tilts the ring and the body together. The tilt lives on this
-    // outer group rather than on the pivot itself because the pivot's own
-    // rotation.y is rewritten every frame to advance the orbit — combining
-    // both rotations on one Euler would make the orbital plane wobble.
+    // ORBITAL PLANE.
+    // Every body hangs off an orbit group carrying its real orbital
+    // inclination, so the orbit RING and the body itself are tilted together
+    // and always agree. Two angles (both degrees in data.js):
+    //   ascendingNode (Y) — which way round the Sun the orbit tips up
+    //   orbitalInclination (X) — how far it tips
+    // Euler order YXZ makes that read as Ry(node) * Rx(inclination): incline
+    // the plane first, then swing the whole tilted plane round to its real
+    // node longitude. Without the node term every orbit would hinge about the
+    // same line, which looks like a folded fan rather than real planes.
+    //
+    // The tilt lives on this outer group rather than on the pivot because the
+    // pivot's own rotation.y is rewritten every frame to advance the orbit —
+    // combining both rotations on one Euler would make the plane wobble.
     const orbitGroup = new THREE.Object3D();
-    if (p.orbitInclination) orbitGroup.rotation.z = p.orbitInclination;
+    orbitGroup.rotation.order = "YXZ";
+    orbitGroup.rotation.y = (p.ascendingNode || 0) * DEG;
+    orbitGroup.rotation.x = (p.orbitalInclination || 0) * DEG;
     scene.add(orbitGroup);
 
     orbitGroup.add(buildOrbitRing(p.distance));
 
     const pivot = new THREE.Object3D();
     orbitGroup.add(pivot);
+
+    // AXIAL TILT.
+    // The spin axis has to stay pointing the SAME WAY in the orbital frame all
+    // year (that fixed lean is what causes seasons, and what makes Uranus look
+    // like it is rolling rather than always pole-on to the Sun). But this group
+    // sits inside `pivot`, which spins by the orbital angle, so it must undo
+    // that: with Euler order YXZ its world rotation is
+    //   Ry(angle) * Ry(-angle) * Rx(tilt) = Rx(tilt)
+    // i.e. a constant lean, whatever point of the orbit the body is at.
+    // rotation.y is refreshed each frame in the animation loop.
+    const axisGroup = new THREE.Object3D();
+    axisGroup.rotation.order = "YXZ";
+    axisGroup.rotation.x = (p.axialTilt || 0) * DEG;
+    axisGroup.position.set(p.distance, 0, 0);
+    pivot.add(axisGroup);
+
+    // Added to the axisGroup (not the mesh) so the guide line shows the tilt
+    // without spinning with the planet.
+    axisGroup.add(buildAxisIndicator(p.radius));
 
     // Sub-unit bodies (the dwarf planets) are moon-sized on screen, so they
     // get the same 32-segment sphere the moons use instead of the 48-segment
@@ -360,30 +421,39 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       applyTexture(p.texture, mat, "map", true);
     }
 
-    mesh.position.set(p.distance, 0, 0);
+    // Sits at the origin of its axisGroup, which is what carries both the
+    // orbital position and the (fixed) axial tilt; the mesh itself only ever
+    // spins about its own — now tilted — Y axis.
+    mesh.position.set(0, 0, 0);
     mesh.userData.isSelectable = true;
     mesh.userData.dataKey = p.key;
-    pivot.add(mesh);
+    axisGroup.add(mesh);
 
-    // Saturn's rings
+    // Saturn's rings sit in its equatorial plane, so they simply lie flat in
+    // the tilted axisGroup's frame — Saturn's real 26.7° obliquity is what now
+    // tips them (and, over its 29-year orbit, opens and closes them to view).
     if (p.rings) {
       const ringGeo = buildRingGeometry(p.rings.innerRadius, p.rings.outerRadius);
       const ringMat = new THREE.MeshStandardMaterial({
         color: p.rings.texture ? 0xffffff : p.rings.color,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: p.rings.texture ? 1 : 0.75,
+        // Untextured rings default to 0.75; `rings.opacity` lets a body dial
+        // that down (Uranus' rings are real but genuinely very dark and faint).
+        opacity: p.rings.texture ? 1 : (p.rings.opacity ?? 0.75),
         roughness: 0.9,
       });
       if (p.rings.texture) applyTexture(p.rings.texture, ringMat, "map", true);
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.rotation.x = Math.PI / 2.2;
+      ringMesh.rotation.x = Math.PI / 2;
       mesh.add(ringMesh);
     }
 
     // Moons: a `p.moons` array of defs (legacy singular `p.moon` still
     // accepted). Each moon is a pivot parented to the planet mesh, so moons
-    // travel with the planet along its orbit and are spun by the pivot.
+    // travel with the planet along its orbit, are spun by the pivot, and
+    // circle in the planet's (now tilted) equatorial plane — which is where
+    // regular satellites really orbit.
     const moonDefs = p.moons || (p.moon ? [p.moon] : []);
     const moonPivots = [];
     const moonMeshes = [];
@@ -403,7 +473,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
     planetObjects.push({
       data: p,
+      orbitGroup,
       pivot,
+      axisGroup,
       mesh,
       moonPivots,
       moonMeshes,
@@ -1089,6 +1161,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     planetObjects.forEach((obj) => {
       obj.angle += obj.data.orbitSpeed * ORBIT_TIME_SCALE * dt;
       obj.pivot.rotation.y = obj.angle;
+      // Cancel the pivot's orbital rotation so the tilted spin axis keeps
+      // pointing the same way all the way round the orbit (see the axisGroup
+      // comment where it's built) instead of precessing once per year.
+      obj.axisGroup.rotation.y = -obj.angle;
       obj.mesh.rotation.y += (obj.data.rotationSpeed || 0.3) * dt;
       if (obj.mesh.userData.cloudMesh) {
         obj.mesh.userData.cloudMesh.rotation.y += 0.02 * dt;

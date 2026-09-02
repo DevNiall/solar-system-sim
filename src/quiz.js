@@ -2,7 +2,9 @@
 // Builds simple question/answer pairs from the `stats`/`facts`/`tagline`
 // fields already present on SUN and each entry in PLANETS (src/data.js).
 // Adding a new stat field or fact to data.js automatically produces more
-// flashcards — no per-planet question authoring required.
+// flashcards — no per-planet question authoring required. The comparison
+// questions at the end additionally read the numeric `axialTilt` /
+// `orbitalInclination` fields, which are real unexaggerated degree values.
 
 function parseFirstNumber(str) {
   if (!str) return null;
@@ -41,6 +43,10 @@ const STAT_TEMPLATES = [
   {
     key: "Moons",
     question: (name) => `How many known moons does ${name} have?`,
+  },
+  {
+    key: "Axial tilt",
+    question: (name) => `How far over does ${name} lean on its axis?`,
   },
   {
     // Only the dwarf planets carry a "Type" stat, so this template quietly
@@ -158,6 +164,39 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet has the longest day?",
       answer: spinsSlowest.name,
+    });
+  }
+
+  // Orientation superlatives, computed from the real `axialTilt` /
+  // `orbitalInclination` degree values in data.js. "Most tilted" is measured
+  // as distance from upright, i.e. min(tilt, 180 - tilt): an obliquity above
+  // 90° means the body is upside-down (spinning retrograde) rather than
+  // "even more tilted", so Venus' 177.4° is really a 2.6° lean and Uranus'
+  // 97.8° is the genuine winner at 82.2° off upright.
+  const withTilt = majorPlanets
+    .filter((p) => typeof p.axialTilt === "number")
+    .map((p) => ({ name: p.name, off: Math.min(p.axialTilt, 180 - p.axialTilt) }));
+  if (withTilt.length > 0) {
+    const mostTilted = withTilt.reduce((a, b) => (b.off > a.off ? b : a));
+    const leastTilted = withTilt.reduce((a, b) => (b.off < a.off ? b : a));
+    cards.push({
+      question: "Which planet is tipped over the most, spinning almost on its side?",
+      answer: `${mostTilted.name} — its axis leans about ${Math.round(mostTilted.off)}° away from upright.`,
+    });
+    cards.push({
+      question: "Which planet spins almost perfectly upright, with no seasons to speak of?",
+      answer: leastTilted.name,
+    });
+  }
+
+  const withInclination = majorPlanets
+    .filter((p) => typeof p.orbitalInclination === "number")
+    .map((p) => ({ name: p.name, inc: p.orbitalInclination }));
+  if (withInclination.length > 0) {
+    const steepest = withInclination.reduce((a, b) => (b.inc > a.inc ? b : a));
+    cards.push({
+      question: "The eight planets orbit in almost the same flat plane. Which one strays furthest out of it?",
+      answer: `${steepest.name}, whose orbit is tilted about ${steepest.inc}° to Earth's.`,
     });
   }
 
