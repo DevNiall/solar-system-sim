@@ -60,7 +60,7 @@
     gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
-    max-width: 50vw;
+    max-width: 62vw;
   }
 
   button.pill {
@@ -80,6 +80,10 @@
   button.pill.primary { background: rgba(255, 175, 60, 0.85); color: #241a04; border-color: rgba(255,200,120,0.6); font-weight: 600;}
   button.pill.primary:hover { background: rgba(255, 190, 90, 0.95); }
   button.pill:disabled { opacity: 0.35; cursor: default; }
+  /* "on" state for toggle buttons (e.g. simulation paused) — reuses the
+     primary amber accent so an active toggle is obvious at a glance. */
+  button.pill.toggled { background: rgba(255, 175, 60, 0.85); color: #241a04; border-color: rgba(255,200,120,0.6); font-weight: 600; }
+  button.pill.toggled:hover { background: rgba(255, 190, 90, 0.95); }
 
   select.pill {
     pointer-events: auto;
@@ -94,6 +98,17 @@
   }
   select.pill:hover { background: rgba(70, 100, 190, 0.85); }
   select.pill option { background: #10131f; color: #e8ecf7; }
+
+  /* Keeps the simulation playback controls (pause + speed) glued together as
+     one unit when #controls wraps, and hangs the divider off the group itself
+     so it can never end up dangling alone at the end of a row. */
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 10px;
+    border-left: 1px solid rgba(120, 150, 255, 0.28);
+  }
 
   #infoPanel {
     position: absolute;
@@ -220,6 +235,11 @@
     border-radius: 14px;
     padding: 26px 30px;
     max-width: 480px;
+    /* short/landscape viewports (tablets, small laptops) can't fit the full
+       text, so scroll the box rather than letting it overflow the screen and
+       push the close button out of reach */
+    max-height: 82vh;
+    overflow-y: auto;
     line-height: 1.55;
     font-size: 13.5px;
     color: #d7dcf2;
@@ -255,6 +275,8 @@
     padding: 26px 30px;
     max-width: 460px;
     width: 88vw;
+    max-height: 82vh;
+    overflow-y: auto;
     line-height: 1.55;
     font-size: 13.5px;
     color: #d7dcf2;
@@ -336,6 +358,9 @@
     #controls { max-width: 100vw; justify-content: flex-start; margin-top: 8px; }
     #topbar { flex-direction: column; gap: 8px; }
     #hint { display: none; }
+    /* the controls stack into narrow rows here, so a left border would read
+       as clutter rather than as a group separator */
+    .control-group { padding-left: 0; border-left: none; }
   }
 </style>
 </head>
@@ -355,14 +380,29 @@
         <option value="outer">Outer Planets</option>
         <option value="dwarf">Dwarf Planets</option>
       </select>
-      <select class="pill" id="tourSpeed" title="Tour pace">
-        <option value="relaxed">Relaxed</option>
-        <option value="normal" selected>Normal</option>
-        <option value="quick">Quick</option>
+      <select class="pill" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
+        <option value="relaxed">Relaxed Pace</option>
+        <option value="normal" selected>Normal Pace</option>
+        <option value="quick">Quick Pace</option>
       </select>
       <button class="pill primary" id="tourBtn">▶ Start Tour</button>
       <button class="pill" id="resetBtn">Reset View</button>
       <button class="pill" id="quizBtn">🧠 Quiz</button>
+      <span class="control-group">
+        <button
+          class="pill"
+          id="simPauseBtn"
+          aria-pressed="false"
+          title="Freeze or resume all orbits and spins (you can still move the camera while paused)"
+        >⏸ Pause</button>
+        <select class="pill" id="simSpeed" title="How fast the whole simulation plays — planet orbits, spins and moons">
+          <option value="0.25">🐢 0.25× Speed</option>
+          <option value="0.5">0.5× Speed</option>
+          <option value="1" selected>1× Speed</option>
+          <option value="2">2× Speed</option>
+          <option value="4">🚀 4× Speed</option>
+        </select>
+      </span>
     </div>
   </div>
 
@@ -417,6 +457,7 @@
         <li>The asteroid belt is a decorative particle field, not a simulation: it sits at the belt's real distance between Mars and Jupiter, but the particles are drawn far larger than real asteroids and the belt is really mostly empty space — spacecraft fly through it without ever coming close to a rock.</li>
         <li>Uranus' rings are real (13 of them), and shown at roughly the right size, but drawn far brighter than reality — they are among the darkest objects in the solar system and were only discovered in 1977. They earn their visibility here because, standing almost upright, they are what makes Uranus' extreme tilt obvious. The faint line through each planet's poles is a drawing aid marking its spin axis, not a real object.</li>
       </ul>
+      <p>The <strong>Pause</strong> button and the <strong>speed</strong> setting only change how fast the animation plays back. Every body still moves at the same speed <em>relative</em> to every other one, so the comparisons above stay true at 0.25× and at 4×.</p>
       <p><strong>What IS accurate:</strong> every body's <em>axial tilt</em> and <em>orbital inclination</em> are the real published angles, applied at full strength with no exaggeration — an angle, unlike a distance, costs nothing to draw truthfully. So Uranus really is rolling around on its side at 97.8°, Venus really is flipped upside-down (which is why it spins backwards), Earth's 23.4° lean stays pointing the same way all year just as the real one does, and Mercury's 7° and Pluto's 17.2° orbits really are the ones that stray furthest out of the flat plane the rest share.</p>
       <p>Facts about diameters, day/year lengths, tilts, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of sizes, distances, and speeds is exaggerated for teaching purposes.</p>
     </div>

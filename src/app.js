@@ -878,6 +878,69 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   // ---------------------------------------------------------------------
+  // Simulation playback controls (pause + speed)
+  //
+  // This is a PLAYBACK-RATE control, not a data edit: nothing here mutates
+  // the `orbitSpeed` / `rotationSpeed` / moon `orbitSpeed` values in data.js.
+  // The multiplier is applied once, to the per-frame delta time in animate(),
+  // so every body speeds up or slows down by the same factor and the
+  // real-relative-speed ordering baked into the data stays exactly intact.
+  //
+  // Deliberately independent of the guided tour's "pace" control, which only
+  // changes how long the camera dwells at each stop. Pause/speed are never
+  // reset by starting or stopping a tour — if a teacher sets 0.25× to talk
+  // through Mercury's orbit, starting a tour keeps that setting.
+  // ---------------------------------------------------------------------
+  const SIM_SPEEDS = [0.25, 0.5, 1, 2, 4];
+
+  const simState = {
+    paused: false,
+    speed: 1,
+  };
+
+  const simPauseBtn = document.getElementById("simPauseBtn");
+  const simSpeedSelect = document.getElementById("simSpeed");
+
+  function updateSimPauseButton() {
+    if (!simPauseBtn) return;
+    simPauseBtn.textContent = simState.paused ? "▶ Play" : "⏸ Pause";
+    simPauseBtn.classList.toggle("toggled", simState.paused);
+    simPauseBtn.setAttribute("aria-pressed", String(simState.paused));
+    simPauseBtn.title = simState.paused
+      ? "Resume all orbits and spins"
+      : "Freeze or resume all orbits and spins (you can still move the camera while paused)";
+  }
+
+  function setSimPaused(paused) {
+    simState.paused = !!paused;
+    updateSimPauseButton();
+    // Keep the tour bar's own pause label honest: a global pause also holds
+    // the tour in place (see tourClock).
+    updateTourPauseButton();
+  }
+
+  if (simPauseBtn) {
+    simPauseBtn.addEventListener("click", () => setSimPaused(!simState.paused));
+  }
+
+  function applySimSpeedFromSelect() {
+    if (!simSpeedSelect) return;
+    const value = parseFloat(simSpeedSelect.value);
+    // Guard against a hand-edited/unknown option value rather than letting
+    // NaN silently freeze (or explode) the simulation.
+    simState.speed = SIM_SPEEDS.includes(value) ? value : 1;
+  }
+
+  if (simSpeedSelect) {
+    simSpeedSelect.addEventListener("change", applySimSpeedFromSelect);
+  }
+  updateSimPauseButton();
+  // Browsers restore <select> state across a soft reload, so read the control
+  // once at startup rather than assuming it still shows the `selected` 1x
+  // option — otherwise the dropdown could say 4x while the sim ran at 1x.
+  applySimSpeedFromSelect();
+
+  // ---------------------------------------------------------------------
   // Guided tour
   // ---------------------------------------------------------------------
   const tourBtn = document.getElementById("tourBtn");
@@ -912,15 +975,51 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   let tourStops = [...TOUR_SCOPES.full, "__end__"];
 
+  // Pausable clock (ms) driving the tour's dwell / "Tour complete" timers.
+  // It is advanced from animate() only while the tour is neither self-paused
+  // (tour bar Pause button) nor frozen by the global simulation pause, so a
+  // paused simulation also stops the tour marching on to the next planet —
+  // otherwise the camera would keep touring a completely frozen system, which
+  // reads as broken. Deadlines are compared against this clock instead of
+  // using setTimeout precisely so "pause" needs no remaining-time bookkeeping:
+  // stopping the clock stops every pending tour timer exactly where it was.
+  //
+  // Camera flights (updateCameraAnim) and the fact-reveal timer intentionally
+  // stay on real time, so click-to-select, Reset View and an in-progress tour
+  // transition still complete smoothly while paused.
+  let tourClock = 0;
+
   const tourState = {
     active: false,
     paused: false,
     index: 0,
-    dwellTimer: null,
-    dwellRemaining: 0,
-    dwellStart: 0,
+    // Absolute deadlines on tourClock, or null when nothing is pending.
+    dwellDeadline: null,
+    finishDeadline: null,
     dwellDuration: TOUR_SPEEDS.normal,
   };
+
+  function isTourClockRunning() {
+    return tourState.active && !tourState.paused && !simState.paused;
+  }
+
+  function clearTourTimers() {
+    tourState.dwellDeadline = null;
+    tourState.finishDeadline = null;
+  }
+
+  function updateTourTimers() {
+    if (!tourState.active) return;
+    if (tourState.dwellDeadline !== null && tourClock >= tourState.dwellDeadline) {
+      tourState.dwellDeadline = null;
+      goToTourStop(tourState.index + 1);
+    }
+    if (tourState.finishDeadline !== null && tourClock >= tourState.finishDeadline) {
+      tourState.finishDeadline = null;
+      stopTour();
+      hideInfoPanel();
+    }
+  }
 
   function tourStopLabel(key) {
     if (key === "__end__") return "Tour complete";
@@ -936,6 +1035,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     tourState.active = true;
     tourState.paused = false;
     tourState.index = 0;
+    clearTourTimers();
+    updateTourPauseButton();
     tourBar.classList.add("visible");
     tourBtn.textContent = "▶ Start Tour";
     if (tourScopeSelect) tourScopeSelect.disabled = true;
@@ -946,7 +1047,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function stopTour(showReset) {
     tourState.active = false;
     tourState.paused = false;
-    clearTimeout(tourState.dwellTimer);
+    clearTourTimers();
+    clearTimeout(tourState._revealTimer);
+    updateTourPauseButton();
     tourBar.classList.remove("visible");
     if (tourScopeSelect) tourScopeSelect.disabled = false;
     if (tourSpeedSelect) tourSpeedSelect.disabled = false;
@@ -957,7 +1060,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   function goToTourStop(index) {
-    clearTimeout(tourState.dwellTimer);
+    clearTourTimers();
     if (index < 0) index = 0;
     if (index >= tourStops.length) {
       finishTour();
@@ -999,27 +1102,17 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   function armDwell() {
-    clearTimeout(tourState.dwellTimer);
-    tourState.dwellStart = performance.now();
-    tourState.dwellRemaining = tourState.dwellDuration;
-    if (!tourState.paused) {
-      tourState.dwellTimer = setTimeout(() => {
-        if (tourState.active && !tourState.paused) {
-          goToTourStop(tourState.index + 1);
-        }
-      }, tourState.dwellDuration);
-    }
+    // No paused/remaining bookkeeping needed: tourClock itself stops while
+    // the tour (or the whole simulation) is paused, so the deadline is
+    // effectively frozen along with it.
+    tourState.dwellDeadline = tourClock + tourState.dwellDuration;
   }
 
   function finishTour() {
     tourLabel.textContent = "Tour complete";
     tourState.index = tourStops.length - 1;
-    setTimeout(() => {
-      if (tourState.active) {
-        stopTour();
-        hideInfoPanel();
-      }
-    }, 3200);
+    tourState.dwellDeadline = null;
+    tourState.finishDeadline = tourClock + 3200;
   }
 
   tourBtn.addEventListener("click", () => {
@@ -1030,19 +1123,22 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     stopTour();
   });
 
+  // The tour bar's Pause button pauses only the tour's progression (planets
+  // keep orbiting). The topbar's Play/Pause freezes the bodies themselves —
+  // and, because tourClock stops with it, also holds the tour on its current
+  // stop. Either one alone is enough to hold the tour, so the button's label
+  // reflects whichever is in effect.
+  function updateTourPauseButton() {
+    const held = tourState.paused || simState.paused;
+    tourPauseBtn.textContent = held ? "▶ Resume" : "⏸ Pause";
+    // Pausing the whole simulation already holds the tour, so the tour's own
+    // pause toggle would be a no-op in that state; disable it to say so.
+    tourPauseBtn.disabled = simState.paused && !tourState.paused;
+  }
+
   tourPauseBtn.addEventListener("click", () => {
     tourState.paused = !tourState.paused;
-    tourPauseBtn.textContent = tourState.paused ? "▶ Resume" : "⏸ Pause";
-    if (tourState.paused) {
-      clearTimeout(tourState.dwellTimer);
-    } else {
-      // resume with remaining dwell time (simplified: restart a shorter dwell)
-      tourState.dwellTimer = setTimeout(() => {
-        if (tourState.active && !tourState.paused) {
-          goToTourStop(tourState.index + 1);
-        }
-      }, Math.max(1200, tourState.dwellDuration - (performance.now() - tourState.dwellStart)));
-    }
+    updateTourPauseButton();
   });
 
   tourNextBtn.addEventListener("click", () => {
@@ -1278,13 +1374,34 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // ---------------------------------------------------------------------
   // Main animation loop
   // ---------------------------------------------------------------------
-  const ORBIT_TIME_SCALE = 0.25; // global speed multiplier for legibility
-  const clock = new THREE.Clock();
+  const ORBIT_TIME_SCALE = 0.25; // baseline speed multiplier for legibility
+  // Backgrounded tabs stop calling requestAnimationFrame, and a slow/software
+  // renderer can drop to a handful of FPS, so a single frame's delta can be
+  // huge. Clamping keeps that (and a 4x playback rate on top of it) from
+  // teleporting planets around their orbits. It is deliberately applied ONLY
+  // to the simulation step: tourClock below advances on unclamped real time,
+  // so a "4.2 second" tour dwell is 4.2 real seconds at any frame rate.
+  const MAX_FRAME_DELTA = 0.1; // seconds
+  // performance.now() rather than THREE.Clock: the loop needs both a real
+  // wall-clock timestamp (camera flights, tour dwell) and a delta, and
+  // deriving both from one source keeps them from disagreeing.
+  let lastFrameNow = performance.now();
 
   function animate() {
     requestAnimationFrame(animate);
-    const dt = clock.getDelta();
     const now = performance.now();
+    const realDt = now - lastFrameNow; // ms of wall clock since last frame
+    lastFrameNow = now;
+
+    // The single point where playback rate is applied. Pausing is just a
+    // zero-length simulation step: the loop keeps running and rendering, so
+    // camera orbit/pan/zoom and fly-to animations below stay fully alive.
+    const dt = simState.paused
+      ? 0
+      : Math.min(realDt / 1000, MAX_FRAME_DELTA) * simState.speed;
+
+    if (isTourClockRunning()) tourClock += realDt;
+    updateTourTimers();
 
     planetObjects.forEach((obj) => {
       obj.angle += obj.data.orbitSpeed * ORBIT_TIME_SCALE * dt;
