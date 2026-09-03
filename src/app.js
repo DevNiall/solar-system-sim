@@ -506,9 +506,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // manually takes control of the camera.
   let liveFollowFn = null;
 
+  // Companion to liveFollowFn for the Grand Tour: when set, the camera's
+  // OFFSET DIRECTION (not just the point it looks at) is recomputed every
+  // frame from this function. Needed because Jupiter's moons orbit fast at
+  // this time scale — Callisto sweeps ~20°/s around Jupiter — so a direction
+  // sampled once at flight start goes stale within a second and would let
+  // Jupiter drift into frame during the very approach that is supposed to
+  // hide it. Keeping it live means the camera rides Callisto's far side and
+  // Jupiter stays exactly 180° behind us until the reveal beat.
+  let liveDirFn = null;
+
   function updateCameraFromSpherical() {
     camSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, camSpherical.phi));
-    camSpherical.radius = Math.max(3, Math.min(700, camSpherical.radius));
+    // Lower bound was 3 for a long time; the Grand Tour's Callisto stop needs
+    // to sit intimately close to a 0.38-unit moon, so it is now 1.2. (3 was
+    // never a "don't fly inside a body" guard anyway — the Sun's radius is
+    // 6.5.) Upper bound covers the Grand Tour's deep-space opening at ~560.
+    camSpherical.radius = Math.max(1.2, Math.min(700, camSpherical.radius));
     const offset = new THREE.Vector3().setFromSpherical(camSpherical);
     camera.position.copy(controlsTarget).add(offset);
     camera.lookAt(controlsTarget);
@@ -517,6 +531,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function clearFollow() {
     liveFollowFn = null;
+    liveDirFn = null;
   }
 
   renderer.domElement.addEventListener("mousedown", (e) => {
@@ -814,6 +829,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
+  // A longer, softer S-curve than the cubic: it leaves and arrives almost
+  // imperceptibly, which is what makes the Grand Tour's big moves (the
+  // opening reveal, the inward sweep, the Jupiter swing) read as graceful
+  // rather than as a slide. Used only where a move is long enough to earn it.
+  function easeInOutQuint(t) {
+    return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
+  }
+
   function getWorldPositionForKey(key) {
     if (key === "sun") return new THREE.Vector3(0, 0, 0);
     const obj = planetObjects.find((o) => o.data.key === key);
@@ -823,26 +846,85 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     return worldPos;
   }
 
+  // Live world position of one of a planet's moons, by moon name. Moons are
+  // parented to the (tilted, orbiting) planet mesh, so this is the only
+  // honest way to get their position — there is no static value to use.
+  function getMoonWorldPosition(planetKey, moonName) {
+    const obj = planetObjects.find((o) => o.data.key === planetKey);
+    if (!obj) return new THREE.Vector3();
+    const defs = obj.data.moons || (obj.data.moon ? [obj.data.moon] : []);
+    const i = defs.findIndex((m) => m.name === moonName);
+    const mesh = obj.moonMeshes[i < 0 ? 0 : i];
+    return mesh ? mesh.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
+  }
+
+  // Builds a camera offset direction expressed RELATIVE TO THE SUNLIGHT on a
+  // body, which is the whole reason the Grand Tour can give every planet its
+  // own look. The Sun is at the origin, so a body's own azimuth is the
+  // direction its lit face points:
+  //
+  //   azimuth  0     camera outward of the body  -> fully lit disc
+  //   azimuth ±π/2   camera off to the side      -> half-lit, terminator
+  //   azimuth  π     camera between Sun and body -> backlit crescent
+  //                  (and the Sun itself sits just behind the body, so its
+  //                   bloom halo rims the limb — the "silhouette into light")
+  //
+  // `elevation` is the usual spherical phi: 0 is straight down the north
+  // pole, π/2 is exactly in the body's orbital plane, > π/2 looks up at it.
+  function sunRelativeDir(bodyPos, azimuth, elevation) {
+    // + π because a spherical offset built on the body's own azimuth places
+    // the camera between the Sun and the body (i.e. on its night side);
+    // shifting by half a turn makes azimuth 0 mean "sunlight over your
+    // shoulder", which is the convention the shot list above is written in.
+    const theta = Math.atan2(bodyPos.x, bodyPos.z) + Math.PI + azimuth;
+    return new THREE.Vector3().setFromSpherical(new THREE.Spherical(1, elevation, theta));
+  }
+
   // getTargetFn: () => THREE.Vector3, evaluated live every frame (both during
   // the flight and afterwards, via liveFollowFn) so the camera tracks a
   // moving target correctly instead of a fixed point captured at flight-start.
-  function flyCameraTo(getTargetFn, distance, duration, onDone) {
+  //
+  // `opts` (all optional) is the Grand Tour's extension point:
+  //   dir      THREE.Vector3 — explicit offset direction from target to
+  //            camera, sampled once here at flight start. Omit it and the
+  //            camera keeps its current azimuth/elevation and only changes
+  //            radius, which is the original (and still default) behaviour.
+  //   follow   false to not leave liveFollowFn set (used for fixed staging
+  //            points, where locking on afterwards would serve no purpose).
+  function flyCameraTo(getTargetFn, distance, duration, onDone, opts) {
     const fromTarget = controlsTarget.clone();
+    const options = opts || {};
 
     // Compute a nice viewing offset (keep current azimuth/elevation direction, but new radius)
-    const dir = new THREE.Vector3().setFromSpherical(camSpherical).normalize();
+    const dir = options.dir
+      ? options.dir.clone().normalize()
+      : new THREE.Vector3().setFromSpherical(camSpherical).normalize();
     const desiredSph = new THREE.Spherical().setFromVector3(dir.clone().multiplyScalar(distance));
 
-    liveFollowFn = getTargetFn;
+    // Azimuth is periodic, so a naive lerp from e.g. 3.0 to -3.0 rad would
+    // whip the camera nearly all the way around the system instead of
+    // crossing the ±π seam. Only ever take the short way round: the original
+    // tours never changed theta, but every Grand Tour stop does.
+    let dTheta = desiredSph.theta - camSpherical.theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    desiredSph.theta = camSpherical.theta + dTheta;
+
+    liveFollowFn = options.follow === false ? null : getTargetFn;
+    // "flight" keeps the destination direction fresh only while flying;
+    // `true` also holds it for the dwell that follows (see liveDirFn).
+    liveDirFn = options.liveDir === true ? options.getDir : null;
 
     cameraAnim = {
       fromTarget,
       getTarget: getTargetFn,
+      getDir: options.liveDir ? options.getDir : null,
       fromSph: camSpherical.clone(),
       toSph: desiredSph,
       start: performance.now(),
       duration,
       onDone,
+      ease: options.ease || easeInOutCubic,
     };
   }
 
@@ -859,12 +941,24 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function updateCameraAnim(now) {
     if (!cameraAnim) return;
     const t = Math.min(1, (now - cameraAnim.start) / cameraAnim.duration);
-    const e = easeInOutCubic(t);
+    const e = cameraAnim.ease ? cameraAnim.ease(t) : easeInOutCubic(t);
 
     // Re-evaluate the live target every frame so fast-moving planets (e.g.
     // Mercury) don't cause the camera to converge on a stale position.
     const liveTarget = cameraAnim.getTarget();
     controlsTarget.lerpVectors(cameraAnim.fromTarget, liveTarget, e);
+
+    // Re-derive the destination angles from a still-moving reference frame
+    // (a fast-orbiting moon) if this flight asked for it.
+    if (cameraAnim.getDir) {
+      const d = cameraAnim.getDir().clone().normalize();
+      const s = new THREE.Spherical().setFromVector3(d);
+      cameraAnim.toSph.phi = s.phi;
+      let dTheta = s.theta - cameraAnim.fromSph.theta;
+      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      cameraAnim.toSph.theta = cameraAnim.fromSph.theta + dTheta;
+    }
 
     camSpherical.radius = THREE.MathUtils.lerp(cameraAnim.fromSph.radius, cameraAnim.toSph.radius, e);
     camSpherical.theta = THREE.MathUtils.lerp(cameraAnim.fromSph.theta, cameraAnim.toSph.theta, e);
@@ -997,6 +1091,292 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     quick: 2400,
   };
 
+  // ---------------------------------------------------------------------
+  // The Grand Tour — a directed, cinematic scope
+  //
+  // The other scopes are lists of body keys: every stop is framed the same
+  // generic way (keep the camera's current angle, change the radius). The
+  // Grand Tour is instead a SHOT LIST — an ordered array of stop objects,
+  // each of which composes its own shot. That is the whole extension: the
+  // machinery below (tourStops / goToTourStop / armDwell / tourClock /
+  // prev-next / pause) is shared unchanged, and `goToTourStop` simply
+  // branches on whether a stop is a string (classic) or an object (directed).
+  //
+  // Stop fields, all optional except `label`:
+  //   key        body to select + open the info panel for. Omitted = a pure
+  //              camera beat (the opening, the dark run) with no panel.
+  //   target     () => Vector3 the camera looks at. Defaults to `key`'s live
+  //              world position, so it tracks the body as it orbits.
+  //   dir        () => Vector3 offset direction target -> camera. This is
+  //              what makes each body's resting viewpoint distinct; nearly
+  //              all of them are built with sunRelativeDir() so the framing
+  //              is defined against the sunlight, not against arbitrary
+  //              world axes that the body drifts through as it orbits.
+  //   distance   camera radius at the end of the move.
+  //   duration   flight time in ms (real time, like every camera flight).
+  //   dwell      multiplier on the user's chosen dwell pace. This is how the
+  //              rhythm varies — big beats hold at 1.6-1.9x, connective
+  //              beats at 0.4x — WITHOUT overriding the pace the user picked.
+  //   ease       easing curve; long moves use easeInOutQuint.
+  //   snap       place the camera instantly rather than flying (used once,
+  //              for the very first frame of the tour).
+  //
+  // Structure: deep-space opening (2 beats) -> inward sweep onto the Sun ->
+  // inner planets -> Ceres in the belt -> the Jupiter set piece (3 beats) ->
+  // outer planets -> Pluto -> the closing pull-back.
+  // ---------------------------------------------------------------------
+
+  // The moon the Jupiter set piece is staged around. Callisto is the
+  // outermost Galilean (8.9 units out), which buys the most room to sit on
+  // the far side of it with Jupiter safely behind the camera.
+  const JUPITER_STAGE_MOON = "Callisto";
+
+  // Unit vector pointing from Jupiter out through the staging moon: the
+  // "away from Jupiter" axis the whole set piece is built on.
+  function jupiterMoonOutwardDir() {
+    const moon = getMoonWorldPosition("jupiter", JUPITER_STAGE_MOON);
+    const dir = moon.clone().sub(getWorldPositionForKey("jupiter"));
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+    return dir.normalize();
+  }
+
+  // The dark run's two fixed staging points. The camera climbs steeply out of
+  // the ecliptic just inside Callisto's orbit and stares up and outward into
+  // empty sky: Jupiter ends up ~70° off the view axis and 30 units below,
+  // which is what keeps it out of frame for the whole approach. (Aiming the
+  // run at anything on the far side of Jupiter cannot work — to look past
+  // Jupiter you have to look AT Jupiter.)
+  function jupiterDarkRunTarget() {
+    const out = jupiterMoonOutwardDir();
+    return getWorldPositionForKey("jupiter")
+      .clone()
+      .addScaledVector(out, 55)
+      .add(new THREE.Vector3(0, 70, 0));
+  }
+  function jupiterDarkRunCamera() {
+    const out = jupiterMoonOutwardDir();
+    return getWorldPositionForKey("jupiter")
+      .clone()
+      .addScaledVector(out, 11)
+      .add(new THREE.Vector3(0, 18, 0));
+  }
+
+  const GRAND_TOUR = [
+    {
+      // Cold open: a single bright point in a lot of black. Snapped, because
+      // this is frame one of the piece, then given a slow drift inward so
+      // the shot is alive rather than a static plate.
+      label: "A faint star in the dark…",
+      snap: true,
+      target: () => new THREE.Vector3(0, 0, 0),
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.44),
+      distance: OVERVIEW_DISTANCE * 2.95,
+      follow: false,
+    },
+    {
+      label: "…and it has planets.",
+      target: () => new THREE.Vector3(0, 0, 0),
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.4),
+      distance: OVERVIEW_DISTANCE * 2.55,
+      duration: 5200,
+      ease: easeInOutQuint,
+      dwell: 0.35,
+      follow: false,
+    },
+    {
+      // The reveal: a long draw-in that also rises out of the plane, so the
+      // orbits open from a single line into the whole system laid out.
+      label: "Our Solar System",
+      target: () => new THREE.Vector3(0, 0, 0),
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.55, 0.78),
+      distance: OVERVIEW_DISTANCE,
+      duration: 11000,
+      ease: easeInOutQuint,
+      dwell: 1.5,
+      follow: false,
+    },
+    {
+      // The sweep: one continuous, very long eased move from the overview
+      // down through the outer orbits and onto the Sun. No cut.
+      key: "sun",
+      label: "Sun",
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.2, 1.32),
+      distance: 22,
+      duration: 12000,
+      ease: easeInOutQuint,
+      dwell: 1.5,
+    },
+    {
+      key: "mercury",
+      label: "Mercury",
+      // Hard sidelight across a battered, airless world: the terminator runs
+      // straight down the middle and the craters catch the light.
+      dir: () => sunRelativeDir(getWorldPositionForKey("mercury"), -1.35, 1.28),
+      distance: 4.2,
+      duration: 5200,
+      dwell: 0.9,
+    },
+    {
+      key: "venus",
+      label: "Venus",
+      // The most intimate framing in the tour: close enough that the cloud
+      // deck fills the frame, three-quarter lit so the swirls have shape.
+      // (A backlit crescent was tried first and doesn't work here — Venus
+      // orbits only 15 units out, so anything past ~110° puts the Sun's
+      // whole disc in shot and Venus goes to unreadable silhouette. The
+      // tour's backlit beat is Pluto, where the Sun is a distant spark.)
+      dir: () => sunRelativeDir(getWorldPositionForKey("venus"), 0.95, 1.18),
+      distance: 3.4,
+      duration: 5600,
+      ease: easeInOutQuint,
+      dwell: 1.1,
+    },
+    {
+      key: "earth",
+      label: "Earth",
+      // Dead-on terminator, from slightly above: day, night and the sweep of
+      // cloud between them all in one frame. The Moon drifts through too.
+      dir: () => sunRelativeDir(getWorldPositionForKey("earth"), 1.5, 1.26),
+      distance: 5.0,
+      duration: 5600,
+      dwell: 1.4,
+    },
+    {
+      key: "mars",
+      label: "Mars",
+      // Low and looking up at a fully lit disc — the one framing that sells
+      // the colour rather than the shadow.
+      dir: () => sunRelativeDir(getWorldPositionForKey("mars"), 0.3, 1.74),
+      distance: 4.0,
+      duration: 5200,
+      dwell: 1.0,
+    },
+    {
+      key: "ceres",
+      label: "Ceres",
+      // Down into the plane of the belt, so the asteroids read as a band
+      // running edge-on across the frame with Ceres sitting in it.
+      dir: () => sunRelativeDir(getWorldPositionForKey("ceres"), -0.9, 1.53),
+      distance: 4.6,
+      duration: 6000,
+      dwell: 1.0,
+    },
+    {
+      // --- Jupiter set piece, beat 1: the dark run. -------------------
+      // A steep climb out of the ecliptic to a vantage just inside
+      // Callisto's orbit, looking up and outward into empty sky. Jupiter is
+      // below and ~170° off the view axis the whole way, so the
+      // audience is carried right up to the largest thing in the system
+      // without ever seeing it. (Aiming the run at a point on the FAR side
+      // of Jupiter cannot work — to look past Jupiter you must look at it.)
+      label: "Climbing out into the dark…",
+      target: jupiterDarkRunTarget,
+      camera: jupiterDarkRunCamera,
+      fixedTarget: true,
+      duration: 8000,
+      ease: easeInOutQuint,
+      dwell: 0.4,
+      follow: false,
+    },
+    {
+      // --- beat 2: arrive at the moon, Jupiter still off screen. ------
+      // The camera drops to a point BETWEEN Jupiter and Callisto and looks
+      // OUTWARD at the moon, which puts Jupiter squarely behind it. (The
+      // opposite arrangement — sitting outside the moon looking in — frames
+      // Callisto against a Jupiter that fills the screen, which is exactly
+      // the reveal we are saving.) `liveDir` holds that geometry through the
+      // dwell as Callisto keeps sweeping round at ~20°/s.
+      label: "Callisto",
+      target: () => getMoonWorldPosition("jupiter", JUPITER_STAGE_MOON),
+      dir: () => jupiterMoonOutwardDir().negate(),
+      liveDir: true,
+      distance: 2.0,
+      duration: 6500,
+      ease: easeInOutQuint,
+      dwell: 1.2,
+    },
+    {
+      // --- beat 3: the entrance. --------------------------------------
+      // From behind Callisto the camera swings a half turn and settles
+      // facing Jupiter from 9 units out: a 3.8-unit radius seen from 9 is
+      // ~45° of sky, nearly the full height of the frame. Tipped below the
+      // equator so we are looking UP at it.
+      key: "jupiter",
+      label: "Jupiter",
+      dir: () => {
+        const out = jupiterMoonOutwardDir();
+        const sph = new THREE.Spherical().setFromVector3(out);
+        // keep the azimuth, drop the elevation below the equator
+        return new THREE.Vector3().setFromSpherical(
+          new THREE.Spherical(1, Math.min(sph.phi + 0.42, 2.6), sph.theta)
+        );
+      },
+      // live only for the flight: the destination angle keeps tracking
+      // Callisto so the pivot starts exactly where the camera already is,
+      // then locks so the dwell is a steady held shot of Jupiter.
+      liveDir: "flight",
+      distance: 9,
+      duration: 7000,
+      ease: easeInOutQuint,
+      dwell: 1.9,
+    },
+    {
+      key: "saturn",
+      label: "Saturn",
+      // Thirty degrees above the plane and three-quarters lit: the only
+      // angle that opens the rings into a full ellipse and throws the
+      // planet's shadow across them.
+      dir: () => sunRelativeDir(getWorldPositionForKey("saturn"), 0.75, 1.0),
+      distance: 17,
+      duration: 7000,
+      ease: easeInOutQuint,
+      dwell: 1.7,
+    },
+    {
+      key: "uranus",
+      label: "Uranus",
+      // Near the plane and mostly backlit, which stands its tipped-over
+      // rings up as a vertical bullseye against the dark — the one framing
+      // that makes a 98° axial tilt legible on a featureless ball.
+      dir: () => sunRelativeDir(getWorldPositionForKey("uranus"), 2.3, 1.16),
+      distance: 11,
+      duration: 6400,
+      dwell: 1.2,
+    },
+    {
+      key: "neptune",
+      label: "Neptune",
+      // From below and far back: a small, deep blue, fully lit disc with a
+      // lot of empty space around it. Distance is the point here.
+      dir: () => sunRelativeDir(getWorldPositionForKey("neptune"), -0.35, 1.9),
+      distance: 13,
+      duration: 6400,
+      ease: easeInOutQuint,
+      dwell: 1.2,
+    },
+    {
+      key: "pluto",
+      label: "Pluto",
+      // The coldest framing in the tour: backlit, close, tiny, with Charon
+      // swinging around it. The Sun is now just another bright star.
+      dir: () => sunRelativeDir(getWorldPositionForKey("pluto"), 2.6, 1.42),
+      distance: 3.6,
+      duration: 6000,
+      dwell: 1.3,
+    },
+    {
+      // Close: rise back out of the plane to the whole system, held long.
+      label: "Tour complete",
+      target: () => new THREE.Vector3(0, 0, 0),
+      dir: () => sunRelativeDir(new THREE.Vector3(), -0.6, 0.7),
+      distance: OVERVIEW_DISTANCE,
+      duration: 12000,
+      ease: easeInOutQuint,
+      dwell: 1.0,
+      follow: false,
+    },
+  ];
+
   let tourStops = [...TOUR_SCOPES.full, "__end__"];
 
   // Pausable clock (ms) driving the tour's dwell / "Tour complete" timers.
@@ -1046,14 +1426,21 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   function tourStopLabel(key) {
+    if (typeof key === "object" && key) return key.label;
     if (key === "__end__") return "Tour complete";
     const data = getDataByKey(key);
     return data ? data.name : key;
   }
 
   function startTour() {
-    const scope = TOUR_SCOPES[tourScopeSelect?.value] || TOUR_SCOPES.full;
-    tourStops = [...scope, "__end__"];
+    const scopeName = tourScopeSelect?.value;
+    if (scopeName === "grand") {
+      // The Grand Tour supplies its own closing pull-back, so no "__end__".
+      tourStops = GRAND_TOUR;
+    } else {
+      const scope = TOUR_SCOPES[scopeName] || TOUR_SCOPES.full;
+      tourStops = [...scope, "__end__"];
+    }
     tourState.dwellDuration =
       TOUR_SPEEDS[tourSpeedSelect?.value] || TOUR_SPEEDS.normal;
     tourState.active = true;
@@ -1110,6 +1497,11 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       return;
     }
 
+    if (typeof key === "object") {
+      goToDirectedStop(key);
+      return;
+    }
+
     hideInfoPanel();
     // flyCameraToKey wires up liveFollowFn to continuously track this body's
     // live (orbiting) position — both during the flight and, since we never
@@ -1130,11 +1522,89 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     armDwell();
   }
 
-  function armDwell() {
+  // Directed (Grand Tour) stop: compose an explicit shot rather than reusing
+  // the camera's current angle. The two behavioural differences from a
+  // classic stop are deliberate and are what buys the pacing:
+  //   * the dwell is armed when the flight FINISHES, not when it starts, so a
+  //     12-second sweep is not eaten out of the time spent looking at the
+  //     thing it arrives at;
+  //   * the info panel is revealed at 78% of the flight, so on the Jupiter
+  //     beat the name lands as the planet swings into frame, not before.
+  function goToDirectedStop(stop) {
+    hideInfoPanel();
+    clearTimeout(tourState._revealTimer);
+
+    let getTarget = stop.target || (() => getWorldPositionForKey(stop.key));
+    if (stop.fixedTarget) {
+      // Snapshot once: this stop aims at a staging point in empty space that
+      // is derived from a fast-moving moon, and chasing it live would turn a
+      // straight run outward into a wide, unmotivated arc.
+      const fixed = getTarget();
+      getTarget = () => fixed;
+    }
+    // `camera` names the exact camera world position instead of an offset
+    // direction + radius. Used for the staged shots whose whole point is a
+    // precise geometric relationship to something off screen.
+    let dir = stop.dir ? stop.dir() : null;
+    let distance = stop.distance;
+    if (stop.camera) {
+      const offset = stop.camera().sub(getTarget());
+      distance = offset.length();
+      dir = offset.normalize();
+    }
+    const opts = {
+      dir,
+      ease: stop.ease,
+      follow: stop.follow,
+      getDir: stop.camera ? null : stop.dir,
+      liveDir: stop.camera ? null : stop.liveDir,
+    };
+
+    if (stop.key) {
+      const revealDelay = Math.max(400, (stop.duration || 0) * 0.78);
+      tourState._revealTimer = setTimeout(() => {
+        if (!tourState.active) return;
+        const data = getDataByKey(stop.key);
+        if (data) {
+          selectedKey = stop.key;
+          showInfoPanel(data);
+        }
+      }, revealDelay);
+    }
+
+    if (stop.snap) {
+      // Only the opening beat uses this: there is no previous shot to cut
+      // away from, so placing the camera instantly is a first frame, not a
+      // jump cut.
+      clearFollow();
+      cameraAnim = null;
+      controlsTarget.copy(getTarget());
+      const sph = new THREE.Spherical().setFromVector3(
+        (dir || new THREE.Vector3(0, 0, 1)).clone().multiplyScalar(distance)
+      );
+      camSpherical.copy(sph);
+      updateCameraFromSpherical();
+      armDwell(stop.dwell);
+      return;
+    }
+
+    flyCameraTo(
+      getTarget,
+      distance,
+      stop.duration || 4000,
+      () => armDwell(stop.dwell),
+      opts
+    );
+  }
+
+
+  // `scale` (Grand Tour only) multiplies the user-chosen pace for this one
+  // stop, so the rhythm can vary without overriding the pace they picked.
+  function armDwell(scale) {
     // No paused/remaining bookkeeping needed: tourClock itself stops while
     // the tour (or the whole simulation) is paused, so the deadline is
     // effectively frozen along with it.
-    tourState.dwellDeadline = tourClock + tourState.dwellDuration;
+    tourState.dwellDeadline = tourClock + tourState.dwellDuration * (scale || 1);
   }
 
   function finishTour() {
@@ -1518,6 +1988,13 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // for the entire dwell/pause duration at a tour stop.
     if (liveFollowFn && !cameraAnim) {
       controlsTarget.copy(liveFollowFn());
+      if (liveDirFn) {
+        // Hold the composed framing against a moving reference frame for the
+        // whole dwell, not just the flight (Grand Tour: the Callisto beat).
+        const s = new THREE.Spherical().setFromVector3(liveDirFn().clone().normalize());
+        camSpherical.phi = s.phi;
+        camSpherical.theta = s.theta;
+      }
       updateCameraFromSpherical();
     }
 
