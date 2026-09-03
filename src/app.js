@@ -72,12 +72,26 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // ---------------------------------------------------------------------
   // Starfield background
   // ---------------------------------------------------------------------
+  // The shell's inner radius must clear every camera position the app ever
+  // flies to, not just the default OVERVIEW_DISTANCE framing. The Grand
+  // Tour's cold-open/system-reveal beats push the camera out to ~3x
+  // OVERVIEW_DISTANCE (see GRAND_TOUR below) specifically to sell "a faint
+  // star in the dark"; if the star shell's inner edge is closer than that,
+  // the camera ends up flying *through* the field instead of past it, and a
+  // handful of points land within a few units of the lens. THREE's
+  // size-attenuated point sprites scale ~1/distance, so those few points
+  // blow up into oversized, square, out-of-place bright pixels sitting in
+  // front of the reveal — reproduced by screenshotting the cold-open beat.
+  // Padding to 4x with a further 4x-wide shell keeps the whole tour's camera
+  // moves (and ordinary free-cam zoom-out) safely inside the near edge.
+  const STARFIELD_INNER = OVERVIEW_DISTANCE * 4;
+  const STARFIELD_OUTER = STARFIELD_INNER * 2;
   function buildStarfield() {
     const starCount = 4000;
     const positions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i++) {
       // distribute on a large sphere shell so stars stay behind everything
-      const radius = 400 + Math.random() * 500;
+      const radius = STARFIELD_INNER + Math.random() * (STARFIELD_OUTER - STARFIELD_INNER);
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
@@ -88,7 +102,12 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 1.1,
+      // Pushing the shell out ~4x further than before means every point is
+      // ~4x farther from any given camera position, and size-attenuated
+      // sprites scale ~1/distance — so the base size is scaled up to match,
+      // keeping the ordinary (non-tour) starfield's apparent brightness/
+      // density unchanged from before this fix.
+      size: 4.2,
       sizeAttenuation: true,
     });
     const stars = new THREE.Points(geo, mat);
@@ -101,7 +120,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // Falls back to plain black (already the page background) if it fails.
   function buildSkybox() {
     if (!TEXTURES.starsMilkyWay) return;
-    const geo = new THREE.SphereGeometry(900, 48, 32);
+    // Must stay outside STARFIELD_OUTER (see buildStarfield above) or this
+    // BackSide sphere would depth-occlude the far half of the procedural
+    // point field; camera.far (2000) leaves it plenty of room.
+    const geo = new THREE.SphereGeometry(STARFIELD_OUTER * 1.2, 48, 32);
     const mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x666666 });
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
@@ -206,6 +228,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
   sunLight.position.set(0, 0, 0);
   scene.add(sunLight);
+
+  // "Dusk" cue for the Grand Tour's Jupiter reveal (see GRAND_TOUR): a global
+  // dim of the scene lights, driven every frame from a camera flight's
+  // `onProgress` (see flyCameraTo/updateCameraAnim), standing in for the
+  // giant's shadow falling across the scene before it swings into frame.
+  // Deliberately a scene-wide light dip rather than a per-object shadow/
+  // occlusion effect — simple, cheap, and easy to reason about — per the
+  // brief's fallback guidance. Any flight that does NOT pass `onProgress`
+  // snaps this back to 0 when it starts, so leaving the Jupiter set piece
+  // (or exiting the tour mid-beat) can never strand the scene dimmed.
+  const AMBIENT_BASE_INTENSITY = ambient.intensity;
+  const SUN_BASE_INTENSITY = sunLight.intensity;
+  function setDuskAmount(amount) {
+    const a = THREE.MathUtils.clamp(amount, 0, 1);
+    ambient.intensity = THREE.MathUtils.lerp(AMBIENT_BASE_INTENSITY, AMBIENT_BASE_INTENSITY * 0.22, a);
+    sunLight.intensity = THREE.MathUtils.lerp(SUN_BASE_INTENSITY, SUN_BASE_INTENSITY * 0.3, a);
+  }
 
   // ---------------------------------------------------------------------
   // Selective-bloom layer
@@ -891,9 +930,16 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   //            radius, which is the original (and still default) behaviour.
   //   follow   false to not leave liveFollowFn set (used for fixed staging
   //            points, where locking on afterwards would serve no purpose).
+  //   onProgress(t) — optional, called every frame of the flight with the
+  //            RAW (unequal, linear) 0..1 progress, for effects that want
+  //            their own curve independent of the camera's easing (e.g. the
+  //            Jupiter reveal's dusk cue). Flights that omit it reset the
+  //            dusk cue to 0 immediately, so it can never leak into a shot
+  //            that doesn't ask for it.
   function flyCameraTo(getTargetFn, distance, duration, onDone, opts) {
     const fromTarget = controlsTarget.clone();
     const options = opts || {};
+    if (!options.onProgress) setDuskAmount(0);
 
     // Compute a nice viewing offset (keep current azimuth/elevation direction, but new radius)
     const dir = options.dir
@@ -924,6 +970,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       start: performance.now(),
       duration,
       onDone,
+      onProgress: options.onProgress || null,
       ease: options.ease || easeInOutCubic,
     };
   }
@@ -942,6 +989,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     if (!cameraAnim) return;
     const t = Math.min(1, (now - cameraAnim.start) / cameraAnim.duration);
     const e = cameraAnim.ease ? cameraAnim.ease(t) : easeInOutCubic(t);
+    if (cameraAnim.onProgress) cameraAnim.onProgress(t);
 
     // Re-evaluate the live target every frame so fast-moving planets (e.g.
     // Mercury) don't cause the camera to converge on a stale position.
@@ -1293,7 +1341,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       distance: 2.0,
       duration: 6500,
       ease: easeInOutQuint,
-      dwell: 1.2,
+      // A bit more hold than a connective beat gets elsewhere: this is the
+      // last quiet moment before the swing, and the dusk cue (see beat 3)
+      // needs Callisto sitting still on screen for a beat before it starts.
+      dwell: 1.6,
     },
     {
       // --- beat 3: the entrance. --------------------------------------
@@ -1301,6 +1352,18 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // facing Jupiter from 9 units out: a 3.8-unit radius seen from 9 is
       // ~45° of sky, nearly the full height of the frame. Tipped below the
       // equator so we are looking UP at it.
+      //
+      // This is the emotional payoff of the whole set piece, so it is
+      // deliberately much slower than a normal beat (15s vs ~6-7s elsewhere)
+      // and paired with `onProgress` driving the scene-wide "dusk" cue
+      // (setDuskAmount, declared with the lights above): ambient/sun
+      // intensity dip as if the giant's mass is starting to occlude the
+      // Sun, well before Jupiter is far enough round to be seen — the
+      // audience *feels* it arrive before the swing brings it into frame.
+      // The dip peaks at t=0.7 (Jupiter is on screen by then: the info
+      // panel itself reveals at 0.78, see goToDirectedStop) and eases back
+      // most of the way by t=1, so the final held frame reads as Jupiter's
+      // own lit face rather than a scene stuck in shadow.
       key: "jupiter",
       label: "Jupiter",
       dir: () => {
@@ -1316,9 +1379,19 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // then locks so the dwell is a steady held shot of Jupiter.
       liveDir: "flight",
       distance: 9,
-      duration: 7000,
+      duration: 15000,
       ease: easeInOutQuint,
-      dwell: 1.9,
+      onProgress: (t) => {
+        // Rise 0->1 across the first 70% (the "dawning awareness" while
+        // Jupiter is still swinging into view), then ease back to a mild
+        // residual dusk (0.15) by the end so the held reveal frame isn't
+        // stuck dark.
+        let amount;
+        if (t < 0.7) amount = t / 0.7;
+        else amount = 1 - ((t - 0.7) / 0.3) * 0.85;
+        setDuskAmount(amount);
+      },
+      dwell: 2.2,
     },
     {
       key: "saturn",
@@ -1558,6 +1631,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       follow: stop.follow,
       getDir: stop.camera ? null : stop.dir,
       liveDir: stop.camera ? null : stop.liveDir,
+      onProgress: stop.onProgress,
     };
 
     if (stop.key) {
