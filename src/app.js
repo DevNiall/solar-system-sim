@@ -1098,6 +1098,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const tourScopeSelect = document.getElementById("tourScope");
   const tourSpeedSelect = document.getElementById("tourSpeed");
 
+  if (tourScopeSelect) {
+    tourScopeSelect.value = "grand";
+  }
+
   // The tour bar wraps to a variable number of rows on narrow screens, and
   // the mobile info sheet has to sit directly above it. Publish the measured
   // height as `--tourbar-h` so index.html's responsive rules can offset the
