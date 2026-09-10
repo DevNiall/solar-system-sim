@@ -1507,6 +1507,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       target: jupiterDarkRunTarget,
       camera: jupiterDarkRunCamera,
       fixedTarget: true,
+      freezeMoonOrbits: true,
       duration: 8000,
       ease: easeInOutQuint,
       dwell: 0.4,
@@ -1519,12 +1520,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // opposite arrangement — sitting outside the moon looking in — frames
       // Callisto against a Jupiter that fills the screen, which is exactly
       // the reveal we are saving.) `liveDir` holds that geometry through the
-      // dwell as Callisto keeps sweeping round at ~20°/s.
+      // dwell. The whole Jupiter set piece freezes moon motion so this
+      // deliberately precise line stays visually stable.
       key: "callisto",
       label: "Callisto",
       target: () => getMoonWorldPosition("jupiter", JUPITER_STAGE_MOON),
       dir: () => jupiterMoonOutwardDir().negate(),
       liveDir: true,
+      freezeMoonOrbits: true,
       distance: 2.0,
       duration: 6500,
       ease: easeInOutQuint,
@@ -1565,6 +1568,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // Callisto so the pivot starts exactly where the camera already is,
       // then locks so the dwell is a steady held shot of Jupiter.
       liveDir: "flight",
+      freezeMoonOrbits: true,
       distance: 9,
       duration: 15000,
       ease: easeInOutQuint,
@@ -1704,6 +1708,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const tourState = {
     active: false,
     paused: false,
+    freezeMoonOrbits: false,
     index: 0,
     // Absolute deadlines on tourClock, or null when nothing is pending.
     dwellDeadline: null,
@@ -1785,6 +1790,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       TOUR_SPEEDS[tourSpeedSelect?.value] || TOUR_SPEEDS.normal;
     tourState.active = true;
     tourState.paused = false;
+    tourState.freezeMoonOrbits = false;
     tourState.index = 0;
     clearTourTimers();
     updateTourPauseButton();
@@ -1804,6 +1810,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function stopTour(showReset) {
     tourState.active = false;
     tourState.paused = false;
+    tourState.freezeMoonOrbits = false;
     clearTourTimers();
     clearTimeout(tourState._revealTimer);
     updateTourPauseButton();
@@ -1829,6 +1836,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     }
     tourState.index = index;
     const key = tourStops[index];
+    tourState.freezeMoonOrbits = typeof key === "object" && key.freezeMoonOrbits === true;
     showTourNarration(tourStopLabel(key));
     updateTourTimeline();
     tourPrevBtn.disabled = index === 0;
@@ -1905,7 +1913,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       getDir: stop.camera ? null : stop.dir,
       liveDir: stop.camera ? null : stop.liveDir,
       onProgress: stop.onProgress,
-      tourArc: !stop.camera,
+      // The Callisto/Jupiter staging beats already provide exact camera
+      // geometry, so the generic target arc would distort their path.
+      tourArc: !stop.camera && !stop.liveDir,
     };
 
     if (stop.key) {
@@ -2362,6 +2372,16 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // The original 0.25x preset is now the normal 1x pace: this lets users
   // observe orbital motion without the inner system racing past too quickly.
   const ORBIT_TIME_SCALE = 0.0625;
+  // Moon sizes and distances are already strongly exaggerated for legibility;
+  // a gentler visual rate keeps close-up shots readable while preserving the
+  // real relative ordering within each moon system.
+  const MOON_ORBIT_TIME_SCALE = 0.35;
+  // Giant-planet close-ups need a calmer visual rhythm: their surfaces and
+  // moon systems would otherwise sweep through a tour shot too quickly.
+  const CINEMATIC_SYSTEM_MOTION_SCALES = {
+    jupiter: 0.22,
+    saturn: 0.22,
+  };
   // Backgrounded tabs stop calling requestAnimationFrame, and a slow/software
   // renderer can drop to a handful of FPS, so a single frame's delta can be
   // huge. Clamping keeps that (and a 4x playback rate on top of it) from
@@ -2391,21 +2411,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     updateTourTimers();
 
     planetObjects.forEach((obj) => {
-      obj.angle += obj.data.orbitSpeed * ORBIT_TIME_SCALE * dt;
+      const systemMotionScale = CINEMATIC_SYSTEM_MOTION_SCALES[obj.data.key] || 1;
+      obj.angle += obj.data.orbitSpeed * ORBIT_TIME_SCALE * systemMotionScale * dt;
       obj.pivot.rotation.y = obj.angle;
       // Cancel the pivot's orbital rotation so the tilted spin axis keeps
       // pointing the same way all the way round the orbit (see the axisGroup
       // comment where it's built) instead of precessing once per year.
       obj.axisGroup.rotation.y = -obj.angle;
-      obj.mesh.rotation.y += (obj.data.rotationSpeed || 0.3) * dt;
+      obj.mesh.rotation.y += (obj.data.rotationSpeed || 0.3) * systemMotionScale * dt;
       if (obj.mesh.userData.cloudMesh) {
-        obj.mesh.userData.cloudMesh.rotation.y += 0.02 * dt;
+        obj.mesh.userData.cloudMesh.rotation.y += 0.02 * systemMotionScale * dt;
       }
-      if (obj.moonPivots && obj.moonPivots.length) {
+      if (!tourState.freezeMoonOrbits && obj.moonPivots && obj.moonPivots.length) {
         const moonDefs = obj.data.moons || (obj.data.moon ? [obj.data.moon] : []);
         obj.moonPivots.forEach((moonPivot, i) => {
           const m = moonDefs[i];
-          moonPivot.rotation.y += ((m && m.orbitSpeed) || 5) * ORBIT_TIME_SCALE * dt;
+          moonPivot.rotation.y += ((m && m.orbitSpeed) || 5)
+            * ORBIT_TIME_SCALE * MOON_ORBIT_TIME_SCALE * systemMotionScale * dt;
         });
       }
     });
