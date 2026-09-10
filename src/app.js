@@ -1835,6 +1835,39 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   });
 
   // ---------------------------------------------------------------------
+  // Fullscreen toggle (prefixed fallback for older Safari; the button is
+  // hidden outright where neither is supported, e.g. iPhone Safari, which
+  // only allows fullscreen on <video> elements).
+  // ---------------------------------------------------------------------
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
+  const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+
+  if (!requestFs) {
+    fullscreenBtn.style.display = "none";
+  } else {
+    const getFsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+    const exitFs = () => (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+
+    const updateFullscreenBtn = () => {
+      fullscreenBtn.textContent = getFsElement() ? "⛶ Exit Fullscreen" : "⛶ Fullscreen";
+    };
+
+    fullscreenBtn.addEventListener("click", () => {
+      if (getFsElement()) {
+        exitFs();
+      } else {
+        // webkitRequestFullscreen (older Safari) doesn't return a promise
+        // like the standard method does, so don't assume one to chain onto.
+        Promise.resolve(requestFs.call(document.documentElement)).catch((err) => {
+          console.warn("[fullscreen] request failed:", err);
+        });
+      }
+    });
+    document.addEventListener("fullscreenchange", updateFullscreenBtn);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenBtn);
+  }
+
+  // ---------------------------------------------------------------------
   // About modal
   // ---------------------------------------------------------------------
   const aboutBtn = document.getElementById("aboutBtn");
