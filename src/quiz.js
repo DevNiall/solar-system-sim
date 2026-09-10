@@ -62,7 +62,8 @@ const STAT_TEMPLATES = [
  */
 function generateQuizQuestions(sun, planets) {
   const cards = [];
-  const bodies = [sun, ...planets];
+  const moons = planets.flatMap((planet) => planet.moons || (planet.moon ? [planet.moon] : []));
+  const bodies = [sun, ...planets, ...moons];
 
   // Dwarf planets (flagged `dwarf: true` in data.js) get their own per-body
   // cards like everything else, but must be excluded from the "which PLANET

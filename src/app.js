@@ -501,7 +501,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       const mMat = new THREE.MeshStandardMaterial({ color: m.color, roughness: 0.9 });
       const moonMesh = new THREE.Mesh(mGeo, mMat);
       moonMesh.position.set(m.distance, 0, 0);
-      moonMesh.userData.isSelectable = false;
+      moonMesh.userData.isSelectable = true;
+      moonMesh.userData.dataKey = m.key;
       moonPivot.add(moonMesh);
       applyTexture(m.texture, mMat, "map", true);
       moonPivots.push(moonPivot);
@@ -823,15 +824,23 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function getDataByKey(key) {
     if (key === "sun") return SUN;
-    const found = planetObjects.find((o) => o.data.key === key);
-    return found ? found.data : null;
+    for (const obj of planetObjects) {
+      if (obj.data.key === key) return obj.data;
+      const moons = obj.data.moons || (obj.data.moon ? [obj.data.moon] : []);
+      const moon = moons.find((m) => m.key === key);
+      if (moon) return moon;
+    }
+    return null;
   }
 
   function selectAtScreenPoint(clientX, clientY) {
     mouse.x = (clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    const selectable = [sunMesh, ...planetObjects.map((o) => o.mesh)];
+    const selectable = [
+      sunMesh,
+      ...planetObjects.flatMap((o) => [o.mesh, ...o.moonMeshes]),
+    ];
     const intersects = raycaster.intersectObjects(selectable, false);
     if (intersects.length > 0) {
       const key = intersects[0].object.userData.dataKey;
@@ -980,9 +989,19 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function getWorldPositionForKey(key) {
     if (key === "sun") return new THREE.Vector3(0, 0, 0);
     const obj = planetObjects.find((o) => o.data.key === key);
-    if (!obj) return new THREE.Vector3(0, 0, 0);
+    if (obj) {
+      const worldPos = new THREE.Vector3();
+      obj.mesh.getWorldPosition(worldPos);
+      return worldPos;
+    }
+    for (const planet of planetObjects) {
+      const moonIndex = (planet.data.moons || (planet.data.moon ? [planet.data.moon] : []))
+        .findIndex((moon) => moon.key === key);
+      if (moonIndex >= 0) {
+        return planet.moonMeshes[moonIndex].getWorldPosition(new THREE.Vector3());
+      }
+    }
     const worldPos = new THREE.Vector3();
-    obj.mesh.getWorldPosition(worldPos);
     return worldPos;
   }
 
@@ -1068,6 +1087,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       getDir: options.liveDir ? options.getDir : null,
       fromSph: camSpherical.clone(),
       toSph: desiredSph,
+      useTourArc: options.tourArc === true,
       start: performance.now(),
       duration,
       onDone,
@@ -1076,14 +1096,20 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     };
   }
 
-  function flyCameraToKey(key, durationScale) {
+  function flyCameraToKey(key, durationScale, opts) {
     const data = getDataByKey(key);
     const radius = data.radius || 3;
     // Sub-unit bodies (the dwarf planets) need a much closer stop than the
     // radius x 5 / 8-unit floor used for planets, or the tour and click-to-
     // select would frame Ceres and Pluto as barely-visible dots.
     const viewDist = radius < 1 ? Math.max(radius * 14, 3.5) : Math.max(radius * 5, 8);
-    flyCameraTo(() => getWorldPositionForKey(key), viewDist, 1800 * (durationScale || 1));
+    flyCameraTo(
+      () => getWorldPositionForKey(key),
+      viewDist,
+      1800 * (durationScale || 1),
+      null,
+      opts
+    );
   }
 
   function updateCameraAnim(now) {
@@ -1096,6 +1122,17 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // Mercury) don't cause the camera to converge on a stale position.
     const liveTarget = cameraAnim.getTarget();
     controlsTarget.lerpVectors(cameraAnim.fromTarget, liveTarget, e);
+    if (cameraAnim.useTourArc && t > 0 && t < 1) {
+      const direct = liveTarget.clone().sub(cameraAnim.fromTarget);
+      const lift = Math.max(5, direct.length() * 0.14);
+      const outward = cameraAnim.fromTarget.clone().add(liveTarget);
+      if (outward.lengthSq() < 1e-6) outward.crossVectors(direct, camera.up);
+      if (outward.lengthSq() < 1e-6) outward.set(0, 1, 0);
+      outward.normalize();
+      controlsTarget
+        .addScaledVector(outward, lift * Math.sin(Math.PI * e))
+        .addScaledVector(camera.up, lift * 0.6 * Math.sin(Math.PI * e));
+    }
 
     // Re-derive the destination angles from a still-moving reference frame
     // (a fast-orbiting moon) if this flight asked for it.
@@ -1190,17 +1227,46 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // ---------------------------------------------------------------------
   const tourBtn = document.getElementById("tourBtn");
   const tourBar = document.getElementById("tourBar");
-  const tourLabel = document.getElementById("tourLabel");
+  const tourNarration = document.getElementById("tourNarration");
+  const tourTimeline = document.getElementById("tourTimeline");
+  const tourTimelineTrack = document.getElementById("tourTimelineTrack");
   const tourPrevBtn = document.getElementById("tourPrev");
   const tourNextBtn = document.getElementById("tourNext");
   const tourPauseBtn = document.getElementById("tourPause");
   const tourExitBtn = document.getElementById("tourExit");
   const resetBtn = document.getElementById("resetBtn");
+  const bodySelect = document.getElementById("bodySelect");
   const tourScopeSelect = document.getElementById("tourScope");
   const tourSpeedSelect = document.getElementById("tourSpeed");
 
   if (tourScopeSelect) {
     tourScopeSelect.value = "grand";
+  }
+
+  if (bodySelect) {
+    const sunOption = document.createElement("option");
+    sunOption.value = SUN.key;
+    sunOption.textContent = SUN.name;
+    bodySelect.appendChild(sunOption);
+    PLANETS.forEach((planet) => {
+      const group = document.createElement("optgroup");
+      group.label = planet.name;
+      const planetOption = document.createElement("option");
+      planetOption.value = planet.key;
+      planetOption.textContent = planet.name;
+      group.appendChild(planetOption);
+      (planet.moons || (planet.moon ? [planet.moon] : [])).forEach((moon) => {
+        const moonOption = document.createElement("option");
+        moonOption.value = moon.key;
+        moonOption.textContent = `  ${moon.name}`;
+        group.appendChild(moonOption);
+      });
+      bodySelect.appendChild(group);
+    });
+    bodySelect.addEventListener("change", () => {
+      if (bodySelect.value) selectPlanet(bodySelect.value, true);
+      bodySelect.value = "";
+    });
   }
 
   // The tour bar wraps to a variable number of rows on narrow screens, and
@@ -1225,12 +1291,19 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
   syncChromeHeights();
 
+  const moonBodies = PLANETS.flatMap((planet) => planet.moons || (planet.moon ? [planet.moon] : []));
+
   // Tour scopes determine which bodies (besides the closing "__end__" stop)
-  // are visited. "full" is the Sun -> everything in PLANETS order (which is
-  // distance order, so Ceres is visited inside the asteroid belt and Pluto
-  // last) and stays the default.
+  // are visited. The standard full tour keeps its planet order and inserts
+  // only featured moons; Moon Tour is the complete tour of every moon shown.
   const TOUR_SCOPES = {
-    full: ["sun", ...PLANETS.map((p) => p.key)],
+    full: ["sun", ...PLANETS.flatMap((planet) => [
+      planet.key,
+      ...(planet.moons || (planet.moon ? [planet.moon] : []))
+        .filter((moon) => moon.featured)
+        .map((moon) => moon.key),
+    ])],
+    moons: moonBodies.map((moon) => moon.key),
     inner: ["mercury", "venus", "earth", "mars"],
     outer: ["jupiter", "saturn", "uranus", "neptune"],
     dwarf: PLANETS.filter((p) => p.dwarf).map((p) => p.key),
@@ -1395,6 +1468,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       dwell: 1.4,
     },
     {
+      key: "moon",
+      label: "Moon",
+      dir: () => sunRelativeDir(getWorldPositionForKey("moon"), 0.7, 1.16),
+      distance: 3.5,
+      duration: 4200,
+      dwell: 1.0,
+    },
+    {
       key: "mars",
       label: "Mars",
       // Low and looking up at a fully lit disc — the one framing that sells
@@ -1439,6 +1520,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // Callisto against a Jupiter that fills the screen, which is exactly
       // the reveal we are saving.) `liveDir` holds that geometry through the
       // dwell as Callisto keeps sweeping round at ~20°/s.
+      key: "callisto",
       label: "Callisto",
       target: () => getMoonWorldPosition("jupiter", JUPITER_STAGE_MOON),
       dir: () => jupiterMoonOutwardDir().negate(),
@@ -1499,6 +1581,30 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       dwell: 2.2,
     },
     {
+      key: "io",
+      label: "Io",
+      dir: () => sunRelativeDir(getWorldPositionForKey("io"), -0.85, 1.24),
+      distance: 3.5,
+      duration: 4400,
+      dwell: 1.1,
+    },
+    {
+      key: "europa",
+      label: "Europa",
+      dir: () => sunRelativeDir(getWorldPositionForKey("europa"), 0.9, 1.18),
+      distance: 3.5,
+      duration: 4600,
+      dwell: 1.2,
+    },
+    {
+      key: "ganymede",
+      label: "Ganymede",
+      dir: () => sunRelativeDir(getWorldPositionForKey("ganymede"), -0.7, 1.22),
+      distance: 4.1,
+      duration: 4400,
+      dwell: 1.1,
+    },
+    {
       key: "saturn",
       label: "Saturn",
       // Thirty degrees above the plane and three-quarters lit: the only
@@ -1509,6 +1615,22 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       duration: 7000,
       ease: easeInOutQuint,
       dwell: 1.7,
+    },
+    {
+      key: "titan",
+      label: "Titan",
+      dir: () => sunRelativeDir(getWorldPositionForKey("titan"), 0.9, 1.2),
+      distance: 4.1,
+      duration: 4800,
+      dwell: 1.2,
+    },
+    {
+      key: "enceladus",
+      label: "Enceladus",
+      dir: () => sunRelativeDir(getWorldPositionForKey("enceladus"), -0.8, 1.15),
+      distance: 2.8,
+      duration: 4300,
+      dwell: 1.0,
     },
     {
       key: "uranus",
@@ -1541,6 +1663,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       distance: 3.6,
       duration: 6000,
       dwell: 1.3,
+    },
+    {
+      key: "charon",
+      label: "Charon",
+      dir: () => sunRelativeDir(getWorldPositionForKey("charon"), 0.8, 1.18),
+      distance: 2.8,
+      duration: 4200,
+      dwell: 1.0,
     },
     {
       // Close: rise back out of the plane to the whole system, held long.
@@ -1610,6 +1740,38 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     return data ? data.name : key;
   }
 
+  function renderTourTimeline() {
+    if (!tourTimelineTrack) return;
+    tourTimelineTrack.replaceChildren();
+    tourStops.forEach((stop, index) => {
+      const segment = document.createElement("button");
+      segment.type = "button";
+      segment.className = "timeline-segment";
+      segment.dataset.index = String(index);
+      segment.setAttribute("aria-label", `Jump to ${tourStopLabel(stop)}`);
+      segment.title = `Jump to ${tourStopLabel(stop)}`;
+      segment.addEventListener("click", () => goToTourStop(index));
+      tourTimelineTrack.appendChild(segment);
+    });
+    tourTimeline.classList.add("visible");
+  }
+
+  function updateTourTimeline() {
+    if (!tourTimelineTrack || !tourState.active) return;
+    const segments = tourTimelineTrack.querySelectorAll(".timeline-segment");
+    segments.forEach((segment, index) => {
+      segment.classList.toggle("active", index === tourState.index);
+    });
+  }
+
+  function showTourNarration(label) {
+    if (!tourNarration) return;
+    tourNarration.textContent = label;
+    tourNarration.classList.remove("visible");
+    void tourNarration.offsetWidth;
+    tourNarration.classList.add("visible");
+  }
+
   function startTour() {
     const scopeName = tourScopeSelect?.value;
     if (scopeName === "grand") {
@@ -1634,6 +1796,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     tourBtn.textContent = "▶ Start Tour";
     if (tourScopeSelect) tourScopeSelect.disabled = true;
     if (tourSpeedSelect) tourSpeedSelect.disabled = true;
+    updateMusicMix();
+    renderTourTimeline();
     goToTourStop(0);
   }
 
@@ -1648,6 +1812,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     if (tourScopeSelect) tourScopeSelect.disabled = false;
     if (tourSpeedSelect) tourSpeedSelect.disabled = false;
     clearFollow();
+    tourNarration?.classList.remove("visible");
+    tourTimeline?.classList.remove("visible");
+    updateMusicMix();
     if (showReset !== false) {
       // no-op, kept for symmetry
     }
@@ -1662,7 +1829,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     }
     tourState.index = index;
     const key = tourStops[index];
-    tourLabel.textContent = tourStopLabel(key);
+    showTourNarration(tourStopLabel(key));
+    updateTourTimeline();
     tourPrevBtn.disabled = index === 0;
     tourNextBtn.disabled = false;
 
@@ -1671,7 +1839,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // Pull back to a wide overview shot (fixed point, nothing to track)
       flyCameraTo(() => new THREE.Vector3(0, 0, 0), OVERVIEW_DISTANCE, 2200, () => {
         armDwell();
-      });
+      }, { tourArc: true });
       return;
     }
 
@@ -1684,7 +1852,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // flyCameraToKey wires up liveFollowFn to continuously track this body's
     // live (orbiting) position — both during the flight and, since we never
     // clear it below, for the whole dwell period that follows.
-    flyCameraToKey(key, 1.3);
+    flyCameraToKey(key, 1.3, { tourArc: true });
     // Show facts partway through the flight for a natural reveal, then dwell
     const revealDelay = 900;
     clearTimeout(tourState._revealTimer);
@@ -1737,6 +1905,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       getDir: stop.camera ? null : stop.dir,
       liveDir: stop.camera ? null : stop.liveDir,
       onProgress: stop.onProgress,
+      tourArc: !stop.camera,
     };
 
     if (stop.key) {
@@ -1787,8 +1956,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   }
 
   function finishTour() {
-    tourLabel.textContent = "Tour complete";
     tourState.index = tourStops.length - 1;
+    showTourNarration("Tour complete");
+    updateTourTimeline();
     tourState.dwellDeadline = null;
     tourState.finishDeadline = tourClock + 3200;
   }
@@ -1833,6 +2003,60 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     clearFollow();
     flyCameraTo(() => new THREE.Vector3(0, 0, 0), OVERVIEW_DISTANCE, 1200);
   });
+
+  // ---------------------------------------------------------------------
+  // Background music. Playback starts only from the Music button because
+  // browsers prohibit unprompted audio; tours crossfade to their own track.
+  // ---------------------------------------------------------------------
+  const musicBtn = document.getElementById("musicBtn");
+  const MUSIC_FADE_MS = 1600;
+  const MUSIC_VOLUME = 0.45;
+  let musicEnabled = true;
+  let musicFadeId = 0;
+  const stasisMusic = new Audio(`${import.meta.env.BASE_URL}audio/547029__sondredrakensson__stasis-music-for-space.mp3`);
+  const tourMusic = new Audio(`${import.meta.env.BASE_URL}audio/639495__romariogrande__space-ambient-voyage.ogg`);
+  [stasisMusic, tourMusic].forEach((track) => {
+    track.loop = true;
+    track.preload = "metadata";
+    track.volume = 0;
+  });
+
+  function fadeTrack(track, target, fadeId) {
+    const start = THREE.MathUtils.clamp(track.volume, 0, 1);
+    const startedAt = performance.now();
+    if (target > 0) track.play().catch(() => {});
+    function step(now) {
+      if (fadeId !== musicFadeId) return;
+      const progress = THREE.MathUtils.clamp((now - startedAt) / MUSIC_FADE_MS, 0, 1);
+      track.volume = THREE.MathUtils.clamp(start + (target - start) * progress, 0, 1);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else if (target === 0) {
+        track.pause();
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function updateMusicMix() {
+    const fadeId = ++musicFadeId;
+    const useTourTrack = musicEnabled && tourState.active;
+    fadeTrack(stasisMusic, musicEnabled && !useTourTrack ? MUSIC_VOLUME : 0, fadeId);
+    fadeTrack(tourMusic, useTourTrack ? MUSIC_VOLUME : 0, fadeId);
+  }
+
+  if (musicBtn) {
+    musicBtn.addEventListener("click", () => {
+      musicEnabled = !musicEnabled;
+      musicBtn.setAttribute("aria-pressed", String(musicEnabled));
+      musicBtn.classList.toggle("toggled", musicEnabled);
+      musicBtn.textContent = musicEnabled ? "♫ Music On" : "♫ Music";
+      updateMusicMix();
+    });
+  }
+  updateMusicMix();
+  document.addEventListener("pointerdown", updateMusicMix, { once: true });
+  document.addEventListener("keydown", updateMusicMix, { once: true });
 
   // ---------------------------------------------------------------------
   // Fullscreen toggle (prefixed fallback for older Safari; the button is
@@ -2135,7 +2359,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // ---------------------------------------------------------------------
   // Main animation loop
   // ---------------------------------------------------------------------
-  const ORBIT_TIME_SCALE = 0.25; // baseline speed multiplier for legibility
+  // The original 0.25x preset is now the normal 1x pace: this lets users
+  // observe orbital motion without the inner system racing past too quickly.
+  const ORBIT_TIME_SCALE = 0.0625;
   // Backgrounded tabs stop calling requestAnimationFrame, and a slow/software
   // renderer can drop to a handful of FPS, so a single frame's delta can be
   // huge. Clamping keeps that (and a 4x playback rate on top of it) from

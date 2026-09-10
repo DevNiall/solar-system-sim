@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Solar System Simulator</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&amp;display=swap" rel="stylesheet" />
 <style>
   :root {
     color-scheme: dark;
@@ -66,6 +70,12 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     max-width: 62vw;
+  }
+
+  .tour-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   button.pill {
@@ -210,6 +220,8 @@
     opacity: 0;
     display: flex;
     align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
     gap: 10px;
     background: rgba(10, 12, 24, 0.72);
     backdrop-filter: blur(8px);
@@ -225,11 +237,61 @@
     opacity: 1;
     pointer-events: auto;
   }
-  #tourBar .stop-label {
-    font-size: 12.5px;
-    color: #cfd6f0;
-    min-width: 130px;
+  #tourTimeline {
+    display: none;
+    flex: 0 0 100%;
+    min-width: 0;
+    order: 2;
+    padding-top: 2px;
+  }
+  #tourTimeline.visible { display: block; }
+  .timeline-track {
+    display: flex;
+    gap: 2px;
+    width: min(72vw, 800px);
+    height: 6px;
+  }
+  .timeline-segment {
+    flex: 1 1 0;
+    min-width: 2px;
+    height: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: rgba(126, 147, 205, 0.3);
+    cursor: pointer;
+  }
+  .timeline-segment:hover { background: rgba(181, 202, 255, 0.85); }
+  .timeline-segment.active {
+    background: #ffc259;
+    box-shadow: 0 0 7px rgba(255, 194, 89, 0.85);
+  }
+
+  #tourNarration {
+    position: absolute;
+    top: 29%;
+    left: 50%;
+    width: min(82vw, 920px);
+    transform: translate(-50%, -50%);
+    color: #f7f3e9;
+    font-family: "Play", sans-serif;
+    font-size: clamp(32px, 5vw, 72px);
+    font-weight: 700;
+    line-height: 1.05;
     text-align: center;
+    text-wrap: balance;
+    text-shadow: 0 2px 22px rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    pointer-events: none;
+    z-index: 9;
+  }
+  #tourNarration.visible {
+    animation: tour-writing 1.4s cubic-bezier(0.2, 0.65, 0.2, 1) both;
+  }
+  @keyframes tour-writing {
+    from { opacity: 0; clip-path: inset(0 100% 0 0); }
+    to { opacity: 1; clip-path: inset(0 0 0 0); }
   }
 
   #aboutBtn {
@@ -424,9 +486,8 @@
      narrows it reaches the right-hand hint text, and below 900px it also
      reaches the About button, so both step aside.
 
-     The hint threshold is measured, not guessed: the tour bar is a fixed 515px
-     (its widest label, "Tour complete", still fits the stop-label's min-width)
-     and is centred, while the hint is 359px wide inset 14px from the right, so
+    The hint threshold is measured, not guessed: the tour bar is a fixed 515px
+    and is centred, while the hint is 359px wide inset 14px from the right, so
      they first touch at 515 + 2 * (14 + 359) = 1261px. Hiding at 1260px and
      below therefore leaves every genuinely desktop-sized window — 1280px
      laptops included — exactly as it was. */
@@ -491,6 +552,7 @@
     #controls { max-width: none; justify-content: flex-start; }
     .wide-only { display: none; }
     #hint { display: none; }
+    .tour-group { flex-wrap: wrap; }
     /* the controls stack into narrow rows here, so a left border would read
        as clutter rather than as a group separator */
     .control-group { padding-left: 0; border-left: none; }
@@ -553,20 +615,10 @@
       border-radius: 18px;
     }
     #tourBar.visible { transform: translateY(0); }
-    #tourBar .stop-label { min-width: 60px; }
+    .timeline-track { width: calc(100vw - 48px); }
 
     #aboutModal, #quizModal { padding: 12px; }
     #aboutModal .box-body, #quizModal .box-body { padding: 20px 18px; }
-  }
-
-  /* Below ~560px the tour label needs its own row above the buttons. */
-  @media (max-width: 560px) {
-    #tourBar .stop-label {
-      order: -1;
-      flex-basis: 100%;
-      text-align: center;
-    }
-    #tourBar button.pill { padding-left: 12px; padding-right: 12px; font-size: 13px; }
   }
 
   /* Below ~400px the four tour buttons no longer fit a row at their natural
@@ -620,21 +672,28 @@
       <p>Sizes &amp; distances are compressed for legibility — not to scale. See "About" for details.</p>
     </div>
     <div id="controls">
-      <select class="pill tour-setup" id="tourScope" title="Tour scope">
-        <option value="grand" selected>✦ Grand Tour</option>
-        <option value="full">Full Tour</option>
-        <option value="inner">Inner Planets</option>
-        <option value="outer">Outer Planets</option>
-        <option value="dwarf">Dwarf Planets</option>
+      <span class="tour-group tour-setup">
+        <select class="pill" id="tourScope" title="Tour scope">
+          <option value="grand" selected>✦ Grand Tour</option>
+          <option value="full">Full Tour</option>
+          <option value="moons">Moon Tour</option>
+          <option value="inner">Inner Planets</option>
+          <option value="outer">Outer Planets</option>
+          <option value="dwarf">Dwarf Planets</option>
+        </select>
+        <button class="pill primary" id="tourBtn">▶ Start Tour</button>
+        <select class="pill" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
+          <option value="relaxed">Relaxed</option>
+          <option value="normal" selected>Normal</option>
+          <option value="quick">Quick</option>
+        </select>
+      </span>
+      <select class="pill" id="bodySelect" aria-label="Go to a celestial body" title="Go to a celestial body">
+        <option value="" selected>Go to body...</option>
       </select>
-      <select class="pill tour-setup" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
-        <option value="relaxed">Relaxed</option>
-        <option value="normal" selected>Normal</option>
-        <option value="quick">Quick</option>
-      </select>
-      <button class="pill primary tour-setup" id="tourBtn">▶ Start Tour</button>
       <button class="pill" id="resetBtn">Reset View</button>
       <button class="pill" id="fullscreenBtn" title="Toggle fullscreen">⛶ Fullscreen</button>
+      <button class="pill toggled" id="musicBtn" aria-pressed="true" title="Toggle background music">♫ Music On</button>
       <button class="pill" id="quizBtn">🧠 Quiz</button>
       <span class="control-group">
         <button
@@ -655,12 +714,16 @@
   </div>
 
   <div id="tourBar">
+    <div id="tourTimeline" aria-label="Tour timeline">
+      <div class="timeline-track" id="tourTimelineTrack"></div>
+    </div>
     <button class="pill" id="tourPrev">⏮ Prev</button>
     <button class="pill" id="tourPause">⏸ Pause</button>
-    <span class="stop-label" id="tourLabel">Sun</span>
     <button class="pill" id="tourNext">Next ⏭</button>
     <button class="pill" id="tourExit">✕ Exit<span class="wide-only"> Tour</span></button>
   </div>
+
+  <div id="tourNarration" aria-live="polite"></div>
 
   <button class="pill" id="aboutBtn">ℹ About<span class="wide-only"> this simulation</span></button>
 
@@ -675,8 +738,8 @@
   </div>
 
   <div id="hint">
-    <span class="pointer-fine-only">Drag to rotate · Scroll to zoom · Right-drag to pan · Click a planet for facts</span>
-    <span class="pointer-coarse-only">Drag to rotate · Pinch to zoom · Tap a planet for facts</span>
+    <span class="pointer-fine-only">Drag to rotate · Scroll to zoom · Right-drag to pan · Click a body for facts</span>
+    <span class="pointer-coarse-only">Drag to rotate · Pinch to zoom · Tap a body for facts</span>
   </div>
 
   <div id="quizModal">

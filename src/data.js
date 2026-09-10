@@ -6,7 +6,8 @@
 //
 // Moons live in a `moons: [...]` array on a planet (a legacy singular `moon`
 // object is still accepted by app.js). Each entry needs
-// { name, color, radius, distance, orbitSpeed } and may add a `texture`.
+// { key, name, color, radius, distance, orbitSpeed } and may add a `texture`,
+// `stats`, `facts`, and `featured` (for the curated main tours).
 // `distance` is measured from the planet's center in the same visual units as
 // `radius`, so it must exceed the planet's radius (and any ring outerRadius)
 // to avoid clipping; keep the outermost moon inside the gap to the next
@@ -264,12 +265,26 @@ const PLANETS = [
     ],
     moons: [
       {
+        key: "moon",
         name: "Moon",
         color: 0xbfbfbf,
         texture: TEXTURES.moon,
         radius: 0.35,
         distance: 2.4,
         orbitSpeed: 12,
+        featured: true,
+        tagline: "Earth's familiar companion and a record of the early solar system.",
+        stats: {
+          "Diameter": "3,475 km",
+          "Orbital period": "27.3 days around Earth",
+          "Day length": "27.3 Earth days",
+          "Orbits": "Earth",
+        },
+        facts: [
+          "The same side of the Moon always faces Earth because its rotation is locked to its orbit.",
+          "The Moon's gravity causes most of Earth's ocean tides.",
+          "Apollo astronauts brought back rocks that show the Moon formed after a giant early collision with Earth.",
+        ],
       },
     ],
   },
@@ -303,8 +318,34 @@ const PLANETS = [
     // Phobos and Deimos are really only a few km across; drawn much larger
     // here (but still by far the smallest moons in the sim) so they're visible.
     moons: [
-      { name: "Phobos", color: 0x7d7266, radius: 0.16, distance: 1.7, orbitSpeed: 9 },
-      { name: "Deimos", color: 0x968a7c, radius: 0.11, distance: 2.6, orbitSpeed: 3.2 },
+      {
+        key: "phobos",
+        name: "Phobos",
+        color: 0x7d7266,
+        radius: 0.16,
+        distance: 1.7,
+        orbitSpeed: 9,
+        tagline: "The inner, fast-orbiting moon of Mars.",
+        stats: { "Diameter": "22.5 km", "Orbital period": "7.7 hours around Mars", "Orbits": "Mars" },
+        facts: [
+          "Phobos is slowly spiraling inward and may eventually break apart into a ring around Mars.",
+          "It rises in the west and sets in the east on Mars because it orbits faster than Mars rotates.",
+        ],
+      },
+      {
+        key: "deimos",
+        name: "Deimos",
+        color: 0x968a7c,
+        radius: 0.11,
+        distance: 2.6,
+        orbitSpeed: 3.2,
+        tagline: "The small outer moon of Mars.",
+        stats: { "Diameter": "12.4 km", "Orbital period": "30.3 hours around Mars", "Orbits": "Mars" },
+        facts: [
+          "Deimos is a tiny, irregular moon, likely related to the captured-asteroid-like moons of Mars.",
+          "From Deimos, Mars would fill much more of the sky than the Moon does from Earth.",
+        ],
+      },
     ],
   },
   {
@@ -371,10 +412,67 @@ const PLANETS = [
     // (Ganymede > Callisto > Io > Europa) but every moon is drawn far larger
     // and far closer in than reality so all four read clearly next to Jupiter.
     moons: [
-      { name: "Io", color: 0xe6cf72, radius: 0.30, distance: 5.0, orbitSpeed: 6 },
-      { name: "Europa", color: 0xdcd3c4, radius: 0.26, distance: 6.2, orbitSpeed: 4 },
-      { name: "Ganymede", color: 0xa2988a, radius: 0.42, distance: 7.5, orbitSpeed: 2.4 },
-      { name: "Callisto", color: 0x736958, radius: 0.38, distance: 8.9, orbitSpeed: 1.4 },
+      {
+        key: "io",
+        name: "Io",
+        color: 0xe6cf72,
+        radius: 0.30,
+        distance: 5.0,
+        orbitSpeed: 6,
+        featured: true,
+        tagline: "Jupiter's vividly volcanic inner moon.",
+        stats: { "Diameter": "3,643 km", "Orbital period": "1.77 days around Jupiter", "Orbits": "Jupiter" },
+        facts: [
+          "Io is the most volcanically active world in the solar system.",
+          "Jupiter's powerful gravity repeatedly flexes Io, heating its interior by tidal friction.",
+        ],
+      },
+      {
+        key: "europa",
+        name: "Europa",
+        color: 0xdcd3c4,
+        radius: 0.26,
+        distance: 6.2,
+        orbitSpeed: 4,
+        featured: true,
+        tagline: "An icy moon that may hide a global salty ocean.",
+        stats: { "Diameter": "3,122 km", "Orbital period": "3.55 days around Jupiter", "Orbits": "Jupiter" },
+        facts: [
+          "Europa's cracked ice shell may cover a global ocean containing more water than Earth's oceans.",
+          "Tidal heating from Jupiter could keep that hidden ocean warm enough for chemistry linked to life.",
+          "NASA's Europa Clipper mission is designed to study whether Europa has habitable conditions.",
+        ],
+      },
+      {
+        key: "ganymede",
+        name: "Ganymede",
+        color: 0xa2988a,
+        radius: 0.42,
+        distance: 7.5,
+        orbitSpeed: 2.4,
+        featured: true,
+        tagline: "The largest moon in the solar system.",
+        stats: { "Diameter": "5,268 km", "Orbital period": "7.15 days around Jupiter", "Orbits": "Jupiter" },
+        facts: [
+          "Ganymede is larger than Mercury, although Mercury is much more massive.",
+          "It is the only moon known to have its own internally generated magnetic field.",
+        ],
+      },
+      {
+        key: "callisto",
+        name: "Callisto",
+        color: 0x736958,
+        radius: 0.38,
+        distance: 8.9,
+        orbitSpeed: 1.4,
+        featured: true,
+        tagline: "Jupiter's ancient, heavily cratered outer giant moon.",
+        stats: { "Diameter": "4,821 km", "Orbital period": "16.7 days around Jupiter", "Orbits": "Jupiter" },
+        facts: [
+          "Callisto's surface is one of the most heavily cratered landscapes in the solar system.",
+          "Its ancient surface preserves a record of impacts from the early solar system.",
+        ],
+      },
     ],
   },
   {
@@ -409,8 +507,37 @@ const PLANETS = [
     // never clip through the ring disc. Titan is genuinely huge — bigger than
     // Mercury — while Enceladus is a small ice ball, kept just visible here.
     moons: [
-      { name: "Enceladus", color: 0xeef3f5, radius: 0.20, distance: 7.7, orbitSpeed: 4 },
-      { name: "Titan", color: 0xd9a04a, radius: 0.55, distance: 8.8, orbitSpeed: 1.6 },
+      {
+        key: "enceladus",
+        name: "Enceladus",
+        color: 0xeef3f5,
+        radius: 0.20,
+        distance: 7.7,
+        orbitSpeed: 4,
+        featured: true,
+        tagline: "An icy moon spraying water from a hidden ocean.",
+        stats: { "Diameter": "505 km", "Orbital period": "1.37 days around Saturn", "Orbits": "Saturn" },
+        facts: [
+          "Geysers at Enceladus's south pole spray water vapor and ice grains into space.",
+          "Those plumes show that a warm salty ocean lies beneath its icy crust.",
+        ],
+      },
+      {
+        key: "titan",
+        name: "Titan",
+        color: 0xd9a04a,
+        radius: 0.55,
+        distance: 8.8,
+        orbitSpeed: 1.6,
+        featured: true,
+        tagline: "Saturn's hazy giant moon with rivers and lakes of methane.",
+        stats: { "Diameter": "5,150 km", "Orbital period": "15.9 days around Saturn", "Orbits": "Saturn" },
+        facts: [
+          "Titan is the only moon with a thick atmosphere, denser at its surface than Earth's.",
+          "It has clouds, rain, rivers, and lakes, but they are made from liquid methane and ethane rather than water.",
+          "The Huygens probe landed on Titan in 2005, the most distant landing on another world.",
+        ],
+      },
     ],
   },
   {
@@ -515,7 +642,21 @@ const PLANETS = [
     // Charon really is about half Pluto's diameter — no exaggeration needed to
     // make the point that this is nearly a double planet.
     moons: [
-      { name: "Charon", color: 0x9d9188, radius: 0.3, distance: 1.7, orbitSpeed: 3 },
+      {
+        key: "charon",
+        name: "Charon",
+        color: 0x9d9188,
+        radius: 0.3,
+        distance: 1.7,
+        orbitSpeed: 3,
+        featured: true,
+        tagline: "Pluto's unusually large partner in a double-world system.",
+        stats: { "Diameter": "1,212 km", "Orbital period": "6.4 days around Pluto", "Orbits": "Pluto" },
+        facts: [
+          "Charon is so large relative to Pluto that the pair orbit a point in space between them.",
+          "Charon and Pluto always show each other the same face as they orbit.",
+        ],
+      },
     ],
   },
 ];
