@@ -590,7 +590,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     lastY = e.clientY;
     if (isDragging) {
       exitTourToFreeIfNeeded();
-      clearFollow();
+      // Keep tracking a focused body (selectedKey set) while orbiting around
+      // it — only panning or clicking away breaks that lock.
+      if (!selectedKey) clearFollow();
       camSpherical.theta -= dx * rotateSpeed;
       camSpherical.phi -= dy * rotateSpeed;
       updateCameraFromSpherical();
@@ -625,6 +627,94 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function exitTourToFreeIfNeeded() {
     if (tourState.active) {
       stopTour(false);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Keyboard controls (arrow keys / WASD). Held keys are tracked here and
+  // applied once per frame in animate(), using wall-clock delta time rather
+  // than the (pausable, speed-scaled) simulation step, so controls still
+  // work while playback is paused and stay frame-rate independent.
+  //
+  // Arrow keys always orbit/look around the current pivot (controlsTarget),
+  // mirroring the mouse-drag orbit above — including the same lock-
+  // preserving behavior: looking around a focused body doesn't stop the
+  // camera from tracking it, only panning or clicking away does.
+  //
+  // WASD is context-sensitive: while locked onto a body (selectedKey set)
+  // it orbits too, per the "rotate around the focused body" ask. Free
+  // (nothing focused), it instead FLIES the camera — translating both the
+  // camera and its pivot together along the view direction/right vector, so
+  // the current look angle and distance-to-pivot are preserved and the user
+  // can roam anywhere rather than only orbiting a fixed point.
+  // ---------------------------------------------------------------------
+  const ROTATE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d"]);
+  const keysDown = new Set();
+  const KEY_ROTATE_SPEED = 1.3; // rad/sec
+  const FREE_FLY_SPEED = 30; // units/sec at radius 60, scales with zoom like panSpeed does
+
+  function normalizeKey(e) {
+    return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  }
+  function isTypingTarget(el) {
+    return !!el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA");
+  }
+  window.addEventListener("keydown", (e) => {
+    const key = normalizeKey(e);
+    if (!ROTATE_KEYS.has(key) || isTypingTarget(document.activeElement)) return;
+    e.preventDefault(); // don't let arrow keys scroll the page
+    keysDown.add(key);
+  });
+  window.addEventListener("keyup", (e) => {
+    keysDown.delete(normalizeKey(e));
+  });
+  window.addEventListener("blur", () => keysDown.clear());
+
+  function applyKeyboardControls(realDtMs) {
+    if (!keysDown.size) return;
+    const dt = realDtMs / 1000;
+    const locked = !!selectedKey;
+    const rotStep = KEY_ROTATE_SPEED * dt;
+    let dTheta = 0;
+    let dPhi = 0;
+    if (keysDown.has("ArrowLeft")) dTheta += rotStep;
+    if (keysDown.has("ArrowRight")) dTheta -= rotStep;
+    if (keysDown.has("ArrowUp")) dPhi -= rotStep;
+    if (keysDown.has("ArrowDown")) dPhi += rotStep;
+    if (locked) {
+      if (keysDown.has("a")) dTheta += rotStep;
+      if (keysDown.has("d")) dTheta -= rotStep;
+      if (keysDown.has("w")) dPhi -= rotStep;
+      if (keysDown.has("s")) dPhi += rotStep;
+    }
+    if (dTheta || dPhi) {
+      exitTourToFreeIfNeeded();
+      if (!locked) clearFollow();
+      camSpherical.theta += dTheta;
+      camSpherical.phi += dPhi;
+      updateCameraFromSpherical();
+    }
+
+    if (!locked) {
+      let forward = 0;
+      let strafe = 0;
+      if (keysDown.has("w")) forward += 1;
+      if (keysDown.has("s")) forward -= 1;
+      if (keysDown.has("d")) strafe += 1;
+      if (keysDown.has("a")) strafe -= 1;
+      if (forward || strafe) {
+        exitTourToFreeIfNeeded();
+        clearFollow();
+        const speed = FREE_FLY_SPEED * dt * (camSpherical.radius / 60 + 0.3);
+        const viewDir = new THREE.Vector3();
+        camera.getWorldDirection(viewDir);
+        const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize();
+        const delta = new THREE.Vector3()
+          .addScaledVector(viewDir, forward * speed)
+          .addScaledVector(right, strafe * speed);
+        controlsTarget.add(delta);
+        camera.position.add(delta);
+      }
     }
   }
 
@@ -690,7 +780,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
         touchLastY = y;
         touchDragDistance = Math.hypot(x - touchStartX, y - touchStartY);
         exitTourToFreeIfNeeded();
-        clearFollow();
+        if (!selectedKey) clearFollow();
         camSpherical.theta -= dx * rotateSpeed;
         camSpherical.phi -= dy * rotateSpeed;
         updateCameraFromSpherical();
@@ -746,6 +836,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     if (intersects.length > 0) {
       const key = intersects[0].object.userData.dataKey;
       selectPlanet(key, true);
+    } else if (selectedKey && !tourState.active) {
+      // Clicking/tapping empty space breaks the lock onto a focused body.
+      deselectBody();
     }
   }
 
@@ -804,6 +897,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function hideInfoPanel() {
     infoPanel.classList.remove("visible");
     selectedKey = null;
+  }
+
+  // Breaks the camera's lock onto a focused body: hides its info panel,
+  // stops the camera from tracking it, and clears the deep-link.
+  function deselectBody() {
+    hideInfoPanel();
+    clearFollow();
+    setUrlBody(null);
   }
 
   infoCloseBtn.addEventListener("click", () => {
@@ -2059,6 +2160,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     }
 
     updateCameraAnim(now);
+    applyKeyboardControls(realDt);
 
     // Keep the camera locked onto whatever we're following (a tour stop's
     // planet, or a manually-clicked planet) even when no flight animation is
