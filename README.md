@@ -45,7 +45,9 @@ npm run preview   # optional: serve the built dist/ output locally
 
 ## Textures
 
-Real diffuse texture maps (plus Earth's cloud/specular layers and Saturn's ring alpha texture) are from [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). They're committed locally under `public/textures/` (not hot-linked) so the app doesn't depend on a third-party image host staying up. If any texture fails to load for any reason, materials gracefully fall back to their solid base color — the app never crashes or shows a broken-image icon.
+Real diffuse texture maps (plus Earth's cloud/specular layers, Saturn's ring alpha texture, and the stylized Ceres map) are from [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). They're committed locally under `public/textures/` (not hot-linked) so the app doesn't depend on a third-party image host staying up. If any texture fails to load for any reason, materials gracefully fall back to their solid base color — the app never crashes or shows a broken-image icon.
+
+Texture maps for Phobos, Deimos, the Galilean moons, Enceladus, Titan, Pluto, and Charon are from [NASA 3D Resources](https://github.com/nasa/NASA-3D-Resources). NASA is acknowledged as the source; this simulation is not endorsed by NASA.
 
 Spacecraft and telescope models are from [NASA 3D Resources](https://github.com/nasa/NASA-3D-Resources). NASA is acknowledged as the source; this simulation is not endorsed by NASA.
 

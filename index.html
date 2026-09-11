@@ -559,14 +559,6 @@
        as clutter rather than as a group separator */
     .control-group { padding-left: 0; border-left: none; }
 
-    /* While a tour is running, the topbar's tour-setup row is dead weight —
-       both selects are disabled by src/app.js for the duration and the tour
-       bar already owns Prev/Pause/Next/Exit. On a phone that row is a whole
-       ~90px band of screen, so hand it back to the info sheet. `.tour-setup`
-       is hidden via #app.tour-active because #topbar precedes #tourBar in the
-       DOM, so the sibling selectors used elsewhere cannot reach backwards. */
-    #app.tour-active .tour-setup { display: none; }
-
     /* Info panel becomes a bottom sheet: it can no longer collide with the
        (now much taller) stacked topbar. */
     #infoPanel {

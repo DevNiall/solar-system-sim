@@ -142,6 +142,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // A dense, deliberately compressed shell representing the distant Oort
   // Cloud. It is a single point cloud, not individually simulated comets.
   const OORT_CLOUD_INNER_RADIUS = 880;
+  const OORT_CLOUD_FADE_DISTANCE = 360;
   const OORT_CLOUD_OUTER_RADIUS = 1660;
   let oortCloud = null;
 
@@ -188,8 +189,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       vertexColors: true,
       map: new THREE.CanvasTexture(spriteCanvas),
       alphaTest: 0.22,
-      transparent: false,
-      depthWrite: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
     });
     oortCloud = new THREE.Points(geo, mat);
     scene.add(oortCloud);
@@ -629,8 +631,13 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     const entry = { data, root, visual, orbit: null, phase: Math.random() * Math.PI * 2 };
     if (data.placement === "low-earth-orbit") {
       const earth = planetObjects.find((object) => object.data.key === "earth");
+      const orbitPlane = new THREE.Object3D();
+      orbitPlane.rotation.order = "YXZ";
+      orbitPlane.rotation.y = (data.ascendingNode || 0) * DEG;
+      orbitPlane.rotation.x = (data.orbitInclination || 0) * DEG;
+      earth.axisGroup.add(orbitPlane);
       entry.orbit = new THREE.Object3D();
-      earth.axisGroup.add(entry.orbit);
+      orbitPlane.add(entry.orbit);
       entry.orbit.add(root);
       root.position.set(data.orbitRadius, 0, 0);
     } else if (data.placement === "sun-earth-l2") {
@@ -646,6 +653,13 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       (gltf) => {
         visual.remove(fallback);
         const model = gltf.scene;
+        if (data.key === "iss") {
+          const detached = [];
+          model.traverse((child) => {
+            if (/^(bendedtru|pCylinder)/.test(child.name)) detached.push(child);
+          });
+          detached.forEach((child) => child.parent?.remove(child));
+        }
         const bounds = new THREE.Box3().setFromObject(model);
         const size = bounds.getSize(new THREE.Vector3()).length();
         model.scale.setScalar(size > 0 ? data.visualSize / size : 1);
@@ -1234,6 +1248,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       fromSph: camSpherical.clone(),
       toSph: desiredSph,
       useTourArc: options.tourArc === true,
+      avoidJupiter: options.avoidJupiter !== false,
       start: performance.now(),
       duration,
       onDone,
@@ -1242,14 +1257,18 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     };
   }
 
-  function flyCameraToKey(key, durationScale, opts) {
+  function getTourViewDistance(key) {
     const data = getDataByKey(key);
     const radius = data.radius || data.focusDistance || 3;
     // Sub-unit bodies (the dwarf planets) need a much closer stop than the
     // radius x 5 / 8-unit floor used for planets, or the tour and click-to-
     // select would frame Ceres and Pluto as barely-visible dots.
-    const viewDist = data.viewDistance
+    return data.viewDistance
       || (radius < 1 ? Math.max(radius * 14, 3.5) : Math.max(radius * 5, 8));
+  }
+
+  function flyCameraToKey(key, durationScale, opts) {
+    const viewDist = getTourViewDistance(key);
     flyCameraTo(
       () => getWorldPositionForKey(key),
       viewDist,
@@ -1298,6 +1317,20 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     camSpherical.phi = THREE.MathUtils.lerp(cameraAnim.fromSph.phi, cameraAnim.toSph.phi, e);
 
     updateCameraFromSpherical();
+    if (cameraAnim.avoidJupiter) {
+      const jupiter = planetObjects.find((object) => object.data.key === "jupiter");
+      if (jupiter) {
+        const jupiterPosition = jupiter.mesh.getWorldPosition(new THREE.Vector3());
+        const clearance = jupiter.data.radius + 3.2;
+        const offset = camera.position.clone().sub(jupiterPosition);
+        if (offset.lengthSq() < clearance * clearance) {
+          if (offset.lengthSq() < 1e-6) offset.copy(camera.position).sub(controlsTarget);
+          if (offset.lengthSq() < 1e-6) offset.set(0, 1, 0);
+          camera.position.copy(jupiterPosition).addScaledVector(offset.normalize(), clearance);
+          camera.lookAt(controlsTarget);
+        }
+      }
+    }
 
     if (t >= 1) {
       const done = cameraAnim.onDone;
@@ -1544,8 +1577,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       .add(new THREE.Vector3(0, 18, 0));
   }
 
-  function spaceObjectFlybyTarget(key, direction) {
-    return getWorldPositionForKey(key).clone().add(direction.clone().normalize().multiplyScalar(4));
+  function spaceObjectFlybyTarget(key, direction, offset) {
+    return getWorldPositionForKey(key).clone().add(
+      direction.clone().normalize().multiplyScalar(offset || 4)
+    );
   }
 
   const GRAND_TOUR = [
@@ -1569,23 +1604,16 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       follow: false,
     },
     {
-      key: "voyager-1",
-      label: "Voyager 1",
-      dir: () => sunRelativeDir(getWorldPositionForKey("voyager-1"), -0.55, 1.2),
-      distance: 2.7,
-      duration: 9000,
-      ease: easeInOutQuint,
-      dwell: 1.0,
-    },
-    {
-      label: "Past the farthest human-made craft",
-      target: () => spaceObjectFlybyTarget("voyager-1", new THREE.Vector3(-1, 0.2, 0.7)),
+      // A slow, unselected pass by Voyager 1 on the way toward the system.
+      label: "Approaching the inner system",
+      target: () => spaceObjectFlybyTarget("voyager-1", new THREE.Vector3(-1, 0.2, 0.7), 1.8),
       dir: () => new THREE.Vector3(0.7, 0.18, -1),
-      distance: 5.4,
-      duration: 6500,
+      distance: 2.5,
+      duration: 18000,
       ease: easeInOutQuint,
-      dwell: 0.35,
+      advanceOnArrival: true,
       follow: false,
+      silent: true,
     },
     {
       // The reveal: a long draw-in that also rises out of the plane, so the
@@ -1646,49 +1674,6 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       dwell: 1.4,
     },
     {
-      key: "iss",
-      label: "International Space Station",
-      dir: () => sunRelativeDir(getWorldPositionForKey("iss"), -0.65, 1.16),
-      distance: 4.8,
-      duration: 4600,
-      dwell: 0.8,
-    },
-    {
-      key: "hubble",
-      label: "Hubble Space Telescope",
-      dir: () => sunRelativeDir(getWorldPositionForKey("hubble"), 0.75, 1.22),
-      distance: 4.6,
-      duration: 4400,
-      dwell: 0.8,
-    },
-    {
-      key: "jwst",
-      label: "James Webb Space Telescope",
-      dir: () => sunRelativeDir(getWorldPositionForKey("jwst"), 0.72, 1.16),
-      distance: 4.8,
-      duration: 6200,
-      ease: easeInOutQuint,
-      dwell: 1.0,
-    },
-    {
-      label: "A quiet halo beyond Earth",
-      target: () => spaceObjectFlybyTarget("jwst", new THREE.Vector3(0.8, 0.2, -0.6)),
-      dir: () => new THREE.Vector3(-0.8, 0.22, 0.6),
-      distance: 4.4,
-      duration: 5200,
-      ease: easeInOutQuint,
-      dwell: 0.35,
-      follow: false,
-    },
-    {
-      key: "roman",
-      label: "Nancy Grace Roman Space Telescope",
-      dir: () => sunRelativeDir(getWorldPositionForKey("roman"), -0.72, 1.2),
-      distance: 4.5,
-      duration: 4600,
-      dwell: 0.8,
-    },
-    {
       key: "moon",
       label: "Moon",
       dir: () => sunRelativeDir(getWorldPositionForKey("moon"), 0.7, 1.16),
@@ -1729,6 +1714,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       camera: jupiterDarkRunCamera,
       fixedTarget: true,
       freezeMoonOrbits: true,
+      avoidJupiter: false,
       duration: 8000,
       ease: easeInOutQuint,
       dwell: 0.4,
@@ -1749,6 +1735,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       dir: () => jupiterMoonOutwardDir().negate(),
       liveDir: true,
       freezeMoonOrbits: true,
+      avoidJupiter: false,
       distance: 2.0,
       duration: 6500,
       ease: easeInOutQuint,
@@ -1790,6 +1777,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // then locks so the dwell is a steady held shot of Jupiter.
       liveDir: "flight",
       freezeMoonOrbits: true,
+      avoidJupiter: false,
       distance: 9,
       duration: 15000,
       ease: easeInOutQuint,
@@ -1970,6 +1958,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     if (!tourTimelineTrack) return;
     tourTimelineTrack.replaceChildren();
     tourStops.forEach((stop, index) => {
+      if (typeof stop === "object" && stop.silent) return;
       const segment = document.createElement("button");
       segment.type = "button";
       segment.className = "timeline-segment";
@@ -1985,8 +1974,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   function updateTourTimeline() {
     if (!tourTimelineTrack || !tourState.active) return;
     const segments = tourTimelineTrack.querySelectorAll(".timeline-segment");
-    segments.forEach((segment, index) => {
-      segment.classList.toggle("active", index === tourState.index);
+    segments.forEach((segment) => {
+      segment.classList.toggle("active", Number(segment.dataset.index) === tourState.index);
     });
   }
 
@@ -2016,13 +2005,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     clearTourTimers();
     updateTourPauseButton();
     tourBar.classList.add("visible");
-    // Lets the responsive CSS hide the (now disabled) tour-setup controls on
-    // phones; #topbar precedes #tourBar in the DOM, so a sibling selector on
-    // #tourBar.visible cannot reach it.
+    // #topbar precedes #tourBar in the DOM, so tour-active remains available
+    // for responsive chrome without disabling the active setup controls.
     appEl?.classList.add("tour-active");
     tourBtn.textContent = "▶ Start Tour";
-    if (tourScopeSelect) tourScopeSelect.disabled = true;
-    if (tourSpeedSelect) tourSpeedSelect.disabled = true;
     updateMusicMix();
     renderTourTimeline();
     goToTourStop(0);
@@ -2037,8 +2023,6 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     updateTourPauseButton();
     tourBar.classList.remove("visible");
     appEl?.classList.remove("tour-active");
-    if (tourScopeSelect) tourScopeSelect.disabled = false;
-    if (tourSpeedSelect) tourSpeedSelect.disabled = false;
     clearFollow();
     tourNarration?.classList.remove("visible");
     tourTimeline?.classList.remove("visible");
@@ -2058,7 +2042,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     tourState.index = index;
     const key = tourStops[index];
     tourState.freezeMoonOrbits = typeof key === "object" && key.freezeMoonOrbits === true;
-    showTourNarration(tourStopLabel(key));
+    if (!(typeof key === "object" && key.silent)) showTourNarration(tourStopLabel(key));
     updateTourTimeline();
     tourPrevBtn.disabled = index === 0;
     tourNextBtn.disabled = false;
@@ -2081,7 +2065,13 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // flyCameraToKey wires up liveFollowFn to continuously track this body's
     // live (orbiting) position — both during the flight and, since we never
     // clear it below, for the whole dwell period that follows.
-    flyCameraToKey(key, 1.3, { tourArc: true });
+    flyCameraTo(
+      () => getWorldPositionForKey(key),
+      getTourViewDistance(key),
+      1800 * 1.3,
+      () => armDwell(),
+      { tourArc: true }
+    );
     // Show facts partway through the flight for a natural reveal, then dwell
     const revealDelay = 900;
     clearTimeout(tourState._revealTimer);
@@ -2094,7 +2084,6 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       }
     }, revealDelay);
 
-    armDwell();
   }
 
   // Directed (Grand Tour) stop: compose an explicit shot rather than reusing
@@ -2134,6 +2123,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       getDir: stop.camera ? null : stop.dir,
       liveDir: stop.camera ? null : stop.liveDir,
       onProgress: stop.onProgress,
+      avoidJupiter: stop.avoidJupiter,
       // The Callisto/Jupiter staging beats already provide exact camera
       // geometry, so the generic target arc would distort their path.
       tourArc: !stop.camera && !stop.liveDir,
@@ -2171,7 +2161,10 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       getTarget,
       distance,
       stop.duration || 4000,
-      () => armDwell(stop.dwell),
+      () => {
+        if (stop.advanceOnArrival) goToTourStop(tourState.index + 1);
+        else armDwell(stop.dwell);
+      },
       opts
     );
   }
@@ -2184,6 +2177,25 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // the tour (or the whole simulation) is paused, so the deadline is
     // effectively frozen along with it.
     tourState.dwellDeadline = tourClock + tourState.dwellDuration * (scale || 1);
+  }
+
+  if (tourSpeedSelect) {
+    tourSpeedSelect.addEventListener("change", () => {
+      const previousDuration = tourState.dwellDuration;
+      const nextDuration = TOUR_SPEEDS[tourSpeedSelect.value] || TOUR_SPEEDS.normal;
+      tourState.dwellDuration = nextDuration;
+      if (tourState.active && tourState.dwellDeadline !== null) {
+        const remaining = Math.max(0, tourState.dwellDeadline - tourClock);
+        const scale = previousDuration > 0 ? remaining / previousDuration : 0;
+        tourState.dwellDeadline = tourClock + scale * nextDuration;
+      }
+    });
+  }
+
+  if (tourScopeSelect) {
+    tourScopeSelect.addEventListener("change", () => {
+      if (tourState.active) startTour();
+    });
   }
 
   function finishTour() {
@@ -2572,7 +2584,14 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // Draws the frame: bloom-only pass first, then the composited full scene.
   function renderFrame() {
     if (oortCloud) {
-      oortCloud.visible = camera.position.length() >= OORT_CLOUD_INNER_RADIUS;
+      const distance = camera.position.length();
+      const fade = THREE.MathUtils.smoothstep(
+        distance,
+        OORT_CLOUD_INNER_RADIUS,
+        OORT_CLOUD_INNER_RADIUS + OORT_CLOUD_FADE_DISTANCE
+      );
+      oortCloud.material.opacity = 0.9 * fade;
+      oortCloud.visible = fade > 0.001;
     }
     scene.traverse(darkenNonBloomed);
     bloomComposer.render();
