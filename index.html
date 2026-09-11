@@ -440,6 +440,73 @@
     flex-wrap: wrap;
   }
 
+  #tourPickerModal {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 3, 10, 0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    z-index: 30;
+  }
+  #tourPickerModal.visible { display: flex; }
+  #tourPickerModal .box {
+    width: min(680px, 100%);
+    max-height: 100%;
+    position: relative;
+    box-sizing: border-box;
+    background: #10131f;
+    border: 1px solid rgba(120, 150, 255, 0.3);
+    border-radius: 10px;
+    color: #d7dcf2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #tourPickerModal .box-body {
+    padding: 26px 30px 18px;
+    min-height: 0;
+  }
+  #tourPickerModal h2 { margin: 0 34px 16px 0; font-size: 18px; }
+  #tourPickerModal .closeBtn {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: #9aa4c7;
+    font-size: 20px;
+    cursor: pointer;
+  }
+  .tour-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(180px, 0.65fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+  .tour-preview {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #050915;
+  }
+  .tour-copy { display: flex; flex-direction: column; justify-content: center; }
+  .tour-copy h3 { margin: 0 0 7px; color: #f2f5ff; font-size: 21px; }
+  .tour-copy p { margin: 0; color: #aeb9dc; font-size: 13px; line-height: 1.45; }
+  .tour-picker-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 30px 22px;
+  }
+  .tour-picker-nav { display: flex; align-items: center; gap: 8px; }
+  .tour-picker-nav .pill { min-width: 38px; padding-left: 10px; padding-right: 10px; }
+  #tourPickerStatus { min-width: 34px; color: #8b95bd; font-size: 12px; text-align: center; }
+
   #loading {
     position: absolute;
     inset: 0;
@@ -613,6 +680,13 @@
 
     #aboutModal, #quizModal { padding: 12px; }
     #aboutModal .box-body, #quizModal .box-body { padding: 20px 18px; }
+    #tourPickerModal { padding: 12px; }
+    #tourPickerModal .box-body { padding: 20px 18px 14px; }
+    .tour-picker-footer { padding: 12px 18px 18px; }
+    .tour-slide { grid-template-columns: 1fr; gap: 14px; }
+    #tourPickerModal .box-body { padding: 18px; }
+    #tourPickerModal .tour-slide { grid-template-columns: minmax(0, 1.35fr) minmax(160px, 0.65fr); }
+    #tourPickerModal .tour-preview { min-height: 140px; }
   }
 
   /* Below ~400px the four tour buttons no longer fit a row at their natural
@@ -683,6 +757,7 @@
           <option value="quick">Quick</option>
         </select>
       </span>
+      <button class="pill" id="browseToursBtn" title="Browse visual tour previews">Browse Tours</button>
       <select class="pill" id="bodySelect" aria-label="Go to a celestial body" title="Go to a celestial body">
         <option value="" selected>Go to body...</option>
       </select>
@@ -752,6 +827,30 @@
           <button class="pill" id="quizNextBtn">Next ⏭</button>
           <button class="pill" id="quizExitBtn">✕ Exit<span class="wide-only"> Quiz</span></button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tourPickerModal" role="dialog" aria-modal="true" aria-labelledby="tourPickerTitle">
+    <div class="box">
+      <button class="closeBtn" id="tourPickerCloseBtn" aria-label="Close tour picker">×</button>
+      <div class="box-body">
+        <h2 id="tourPickerTitle">Choose a tour</h2>
+        <article class="tour-slide">
+          <img class="tour-preview" id="tourPickerImage" alt="" />
+          <div class="tour-copy">
+            <h3 id="tourPickerName"></h3>
+            <p id="tourPickerDescription"></p>
+          </div>
+        </article>
+      </div>
+      <div class="tour-picker-footer">
+        <div class="tour-picker-nav">
+          <button class="pill" id="tourPickerPrevBtn" aria-label="Previous tour">←</button>
+          <span id="tourPickerStatus" aria-live="polite"></span>
+          <button class="pill" id="tourPickerNextBtn" aria-label="Next tour">→</button>
+        </div>
+        <button class="pill primary" id="tourPickerStartBtn">▶ Start Tour</button>
       </div>
     </div>
   </div>

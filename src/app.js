@@ -1415,6 +1415,16 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const tourPauseBtn = document.getElementById("tourPause");
   const tourExitBtn = document.getElementById("tourExit");
   const resetBtn = document.getElementById("resetBtn");
+  const browseToursBtn = document.getElementById("browseToursBtn");
+  const tourPickerModal = document.getElementById("tourPickerModal");
+  const tourPickerCloseBtn = document.getElementById("tourPickerCloseBtn");
+  const tourPickerImage = document.getElementById("tourPickerImage");
+  const tourPickerName = document.getElementById("tourPickerName");
+  const tourPickerDescription = document.getElementById("tourPickerDescription");
+  const tourPickerStatus = document.getElementById("tourPickerStatus");
+  const tourPickerPrevBtn = document.getElementById("tourPickerPrevBtn");
+  const tourPickerNextBtn = document.getElementById("tourPickerNextBtn");
+  const tourPickerStartBtn = document.getElementById("tourPickerStartBtn");
   const bodySelect = document.getElementById("bodySelect");
   const tourScopeSelect = document.getElementById("tourScope");
   const tourSpeedSelect = document.getElementById("tourSpeed");
@@ -1498,6 +1508,110 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     outer: ["jupiter", "saturn", "uranus", "neptune"],
     dwarf: PLANETS.filter((p) => p.dwarf).map((p) => p.key),
   };
+
+  const TOUR_CHOICES = [
+    {
+      key: "grand",
+      name: "Grand Tour",
+      description: "A cinematic route from the Oort Cloud through the Solar System's defining worlds.",
+      image: "media/tours/grand.jpg",
+      alt: "Jupiter framed during the Grand Tour",
+    },
+    {
+      key: "full",
+      name: "Full Tour",
+      description: "Visit the Sun, planets, dwarf planets, and the featured moons in distance order.",
+      image: "media/tours/full.jpg",
+      alt: "The Solar System seen from above",
+    },
+    {
+      key: "moons",
+      name: "Moon Tour",
+      description: "Explore every moon modeled in the simulator, from Phobos to Charon.",
+      image: "media/tours/moons.jpg",
+      alt: "Callisto beside Jupiter",
+    },
+    {
+      key: "space",
+      name: "Space Objects Tour",
+      description: "Meet the observatories, station, and spacecraft that carry exploration beyond Earth.",
+      image: "media/screenshot.png",
+      alt: "Solar System simulator overview",
+    },
+    {
+      key: "inner",
+      name: "Inner Planets",
+      description: "A focused circuit of Mercury, Venus, Earth, and Mars.",
+      image: "media/tours/inner.jpg",
+      alt: "Venus in the inner Solar System",
+    },
+    {
+      key: "outer",
+      name: "Outer Planets",
+      description: "Travel outward through the giant planets and their distant blue horizons.",
+      image: "media/tours/outer.jpg",
+      alt: "Saturn and its rings",
+    },
+    {
+      key: "dwarf",
+      name: "Dwarf Planets",
+      description: "Visit Ceres in the asteroid belt and Pluto beyond Neptune.",
+      image: "media/tours/dwarf.jpg",
+      alt: "Pluto at the edge of the Solar System",
+    },
+  ];
+  let tourPickerIndex = Math.max(0, TOUR_CHOICES.findIndex((choice) => choice.key === tourScopeSelect?.value));
+
+  function renderTourPicker() {
+    const choice = TOUR_CHOICES[tourPickerIndex];
+    if (!choice || !tourPickerImage) return;
+    tourPickerImage.src = `${import.meta.env.BASE_URL}${choice.image}`;
+    tourPickerImage.alt = choice.alt;
+    tourPickerName.textContent = choice.name;
+    tourPickerDescription.textContent = choice.description;
+    tourPickerStatus.textContent = `${tourPickerIndex + 1} / ${TOUR_CHOICES.length}`;
+    tourPickerPrevBtn.disabled = tourPickerIndex === 0;
+    tourPickerNextBtn.disabled = tourPickerIndex === TOUR_CHOICES.length - 1;
+  }
+
+  function openTourPicker() {
+    const current = TOUR_CHOICES.findIndex((choice) => choice.key === tourScopeSelect?.value);
+    tourPickerIndex = current >= 0 ? current : 0;
+    renderTourPicker();
+    tourPickerModal.classList.add("visible");
+    tourPickerCloseBtn.focus();
+  }
+
+  function closeTourPicker() {
+    tourPickerModal.classList.remove("visible");
+    browseToursBtn.focus();
+  }
+
+  browseToursBtn?.addEventListener("click", openTourPicker);
+  tourPickerCloseBtn?.addEventListener("click", closeTourPicker);
+  tourPickerModal?.addEventListener("click", (e) => {
+    if (e.target === tourPickerModal) closeTourPicker();
+  });
+  tourPickerPrevBtn?.addEventListener("click", () => {
+    if (tourPickerIndex > 0) {
+      tourPickerIndex -= 1;
+      renderTourPicker();
+    }
+  });
+  tourPickerNextBtn?.addEventListener("click", () => {
+    if (tourPickerIndex < TOUR_CHOICES.length - 1) {
+      tourPickerIndex += 1;
+      renderTourPicker();
+    }
+  });
+  tourPickerStartBtn?.addEventListener("click", () => {
+    tourScopeSelect.value = TOUR_CHOICES[tourPickerIndex].key;
+    closeTourPicker();
+    startTour();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && tourPickerModal?.classList.contains("visible")) closeTourPicker();
+  });
 
   // Dwell duration (ms) per stop for each speed preset. "normal" matches the
   // original hardcoded 4200ms duration.
