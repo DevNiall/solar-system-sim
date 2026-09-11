@@ -243,6 +243,7 @@
     min-width: 0;
     order: 2;
     padding-top: 2px;
+    text-align: center;
   }
   #tourTimeline.visible { display: block; }
   .timeline-track {
@@ -250,6 +251,7 @@
     gap: 2px;
     width: min(72vw, 800px);
     height: 6px;
+    margin-inline: auto;
   }
   .timeline-segment {
     flex: 1 1 0;
@@ -677,6 +679,7 @@
           <option value="grand" selected>✦ Grand Tour</option>
           <option value="full">Full Tour</option>
           <option value="moons">Moon Tour</option>
+          <option value="space">Space Objects Tour</option>
           <option value="inner">Inner Planets</option>
           <option value="outer">Outer Planets</option>
           <option value="dwarf">Dwarf Planets</option>
@@ -774,11 +777,13 @@
           <li>Orbital speeds preserve <em>relative</em> ordering (inner planets orbit faster than outer ones, matching Kepler's laws) but are sped up dramatically and not in true proportion.</li>
           <li>Only the best-known moons are shown — their sizes, distances, and orbit speeds are exaggerated even more than the planets' so they're visible at all. That means a big moon like Titan can look larger on screen than the dwarf planet Ceres, even though Ceres' scale is the (less exaggerated) planet one.</li>
           <li>The asteroid belt is a decorative particle field, not a simulation: it sits at the belt's real distance between Mars and Jupiter, but the particles are drawn far larger than real asteroids and the belt is really mostly empty space — spacecraft fly through it without ever coming close to a rock.</li>
+          <li>The Oort Cloud and human-made space objects use their own compressed cinematic paths, separate from the planet distance scale. The cloud is drawn as a dense visual shell rather than its real, unimaginably vast extent.</li>
           <li>Uranus' rings are real (13 of them), and shown at roughly the right size, but drawn far brighter than reality — they are among the darkest objects in the solar system and were only discovered in 1977. They earn their visibility here because, standing almost upright, they are what makes Uranus' extreme tilt obvious. The faint line through each planet's poles is a drawing aid marking its spin axis, not a real object.</li>
         </ul>
         <p>The <strong>Pause</strong> button and the <strong>speed</strong> setting only change how fast the animation plays back. Every body still moves at the same speed <em>relative</em> to every other one, so the comparisons above stay true at 0.25× and at 4×.</p>
         <p><strong>What IS accurate:</strong> every body's <em>axial tilt</em> and <em>orbital inclination</em> are the real published angles, applied at full strength with no exaggeration — an angle, unlike a distance, costs nothing to draw truthfully. So Uranus really is rolling around on its side at 97.8°, Venus really is flipped upside-down (which is why it spins backwards), Earth's 23.4° lean stays pointing the same way all year just as the real one does, and Mercury's 7° and Pluto's 17.2° orbits really are the ones that stray furthest out of the flat plane the rest share.</p>
         <p>Facts about diameters, day/year lengths, tilts, and moons are drawn from real published astronomical data (NASA/JPL). Only the geometry of sizes, distances, and speeds is exaggerated for teaching purposes.</p>
+        <p>Spacecraft and telescope models are sourced from NASA 3D Resources. NASA is acknowledged as the source; this simulation is not endorsed by NASA.</p>
       </div>
     </div>
   </div>

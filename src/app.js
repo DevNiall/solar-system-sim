@@ -8,7 +8,9 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { TEXTURES, SUN, PLANETS, ASTEROID_BELT } from "./data.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { TEXTURES, SUN, PLANETS, ASTEROID_BELT, SPACE_OBJECTS } from "./data.js";
 import { generateQuizQuestions, shuffle } from "./quiz.js";
 
 (function () {
@@ -34,12 +36,16 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // particular carries it far out of the ecliptic plane at this scale.
   const OUTERMOST_ORBIT = PLANETS.reduce((max, p) => Math.max(max, p.distance), 0);
   const OVERVIEW_DISTANCE = Math.round(OUTERMOST_ORBIT * 1.7);
+  // Start outside the compressed Oort shell so its near hemisphere reads as
+  // a dense field around the distant Solar System.
+  const OORT_CLOUD_CAMERA_DISTANCE = 2900;
+  const MAX_CAMERA_DISTANCE = 3200;
 
   const camera = new THREE.PerspectiveCamera(
     50,
     window.innerWidth / window.innerHeight,
     0.1,
-    2000
+    10000
   );
   // Same distance as OVERVIEW_DISTANCE, looking down on the ecliptic at ~24°.
   camera.position.set(0, OVERVIEW_DISTANCE * 0.41, OVERVIEW_DISTANCE * 0.912);
@@ -84,7 +90,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   // front of the reveal — reproduced by screenshotting the cold-open beat.
   // Padding to 4x with a further 4x-wide shell keeps the whole tour's camera
   // moves (and ordinary free-cam zoom-out) safely inside the near edge.
-  const STARFIELD_INNER = OVERVIEW_DISTANCE * 4;
+  const STARFIELD_INNER = MAX_CAMERA_DISTANCE * 1.5;
   const STARFIELD_OUTER = STARFIELD_INNER * 2;
   function buildStarfield() {
     const starCount = 4000;
@@ -107,7 +113,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       // sprites scale ~1/distance — so the base size is scaled up to match,
       // keeping the ordinary (non-tour) starfield's apparent brightness/
       // density unchanged from before this fix.
-      size: 4.2,
+      size: 14,
       sizeAttenuation: true,
     });
     const stars = new THREE.Points(geo, mat);
@@ -132,6 +138,63 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     mat.color.set(0xffffff);
   }
   buildSkybox();
+
+  // A dense, deliberately compressed shell representing the distant Oort
+  // Cloud. It is a single point cloud, not individually simulated comets.
+  const OORT_CLOUD_INNER_RADIUS = 880;
+  const OORT_CLOUD_OUTER_RADIUS = 1660;
+  let oortCloud = null;
+
+  function buildOortCloud() {
+    const count = 14000;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const outer = OORT_CLOUD_OUTER_RADIUS;
+    const ice = new THREE.Color(0xa9cbe8);
+    const blue = new THREE.Color(0x607fae);
+    for (let i = 0; i < count; i++) {
+      const radius = OORT_CLOUD_INNER_RADIUS + Math.pow(Math.random(), 1.8)
+        * (outer - OORT_CLOUD_INNER_RADIUS);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = radius * Math.cos(phi);
+      positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+      const color = ice.clone().lerp(blue, Math.random() * 0.7);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const spriteSize = 64;
+    const spriteCanvas = document.createElement("canvas");
+    spriteCanvas.width = spriteSize;
+    spriteCanvas.height = spriteSize;
+    const spriteContext = spriteCanvas.getContext("2d");
+    const spriteGradient = spriteContext.createRadialGradient(
+      spriteSize / 2, spriteSize / 2, 0,
+      spriteSize / 2, spriteSize / 2, spriteSize / 2
+    );
+    spriteGradient.addColorStop(0, "rgba(255,255,255,1)");
+    spriteGradient.addColorStop(0.3, "rgba(220,238,255,0.85)");
+    spriteGradient.addColorStop(1, "rgba(180,210,255,0)");
+    spriteContext.fillStyle = spriteGradient;
+    spriteContext.fillRect(0, 0, spriteSize, spriteSize);
+    const mat = new THREE.PointsMaterial({
+      size: 6.4,
+      sizeAttenuation: true,
+      vertexColors: true,
+      map: new THREE.CanvasTexture(spriteCanvas),
+      alphaTest: 0.22,
+      transparent: false,
+      depthWrite: true,
+    });
+    oortCloud = new THREE.Points(geo, mat);
+    scene.add(oortCloud);
+  }
+  buildOortCloud();
 
   // ---------------------------------------------------------------------
   // Asteroid belt
@@ -522,6 +585,84 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   });
 
   // ---------------------------------------------------------------------
+  // Space objects: human-made craft use a separate registry so their
+  // deliberately compressed paths never alter planet scale or quiz data.
+  // ---------------------------------------------------------------------
+  const spaceObjects = [];
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
+  const gltfLoader = new GLTFLoader();
+  gltfLoader.setDRACOLoader(dracoLoader);
+
+  function addSelectableKey(root, key) {
+    root.traverse((child) => {
+      if (child.isMesh) child.userData.dataKey = key;
+    });
+  }
+
+  function buildSpaceObjectFallback(data) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.28, 1.1, 8),
+      new THREE.MeshStandardMaterial({ color: data.color, metalness: 0.7, roughness: 0.3 })
+    );
+    body.rotation.z = Math.PI / 2;
+    group.add(body);
+    const panels = new THREE.Mesh(
+      new THREE.BoxGeometry(1.7, 0.04, 0.45),
+      new THREE.MeshStandardMaterial({ color: 0x274d78, metalness: 0.5, roughness: 0.45 })
+    );
+    group.add(panels);
+    return group;
+  }
+
+  function createSpaceObject(data) {
+    const root = new THREE.Group();
+    const visual = new THREE.Group();
+    root.add(visual);
+    const fallback = buildSpaceObjectFallback(data);
+    visual.add(fallback);
+    root.userData.dataKey = data.key;
+    addSelectableKey(fallback, data.key);
+    scene.add(root);
+
+    const entry = { data, root, visual, orbit: null, phase: Math.random() * Math.PI * 2 };
+    if (data.placement === "low-earth-orbit") {
+      const earth = planetObjects.find((object) => object.data.key === "earth");
+      entry.orbit = new THREE.Object3D();
+      earth.axisGroup.add(entry.orbit);
+      entry.orbit.add(root);
+      root.position.set(data.orbitRadius, 0, 0);
+    } else if (data.placement === "sun-earth-l2") {
+      entry.orbit = new THREE.Object3D();
+      scene.add(entry.orbit);
+      entry.orbit.add(root);
+    } else {
+      root.position.fromArray(data.position);
+    }
+
+    gltfLoader.load(
+      `${import.meta.env.BASE_URL}${data.model}`,
+      (gltf) => {
+        visual.remove(fallback);
+        const model = gltf.scene;
+        const bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3()).length();
+        model.scale.setScalar(size > 0 ? data.visualSize / size : 1);
+        const center = bounds.getCenter(new THREE.Vector3());
+        model.position.copy(center).multiplyScalar(-model.scale.x);
+        addSelectableKey(model, data.key);
+        visual.add(model);
+      },
+      undefined,
+      () => console.warn("[models] failed to load; using fallback:", data.model)
+    );
+    spaceObjects.push(entry);
+  }
+
+  SPACE_OBJECTS.forEach(createSpaceObject);
+
+  // ---------------------------------------------------------------------
   // Custom orbit/pan/zoom camera controls (no external deps)
   // ---------------------------------------------------------------------
   const controlsTarget = new THREE.Vector3(0, 0, 0);
@@ -561,8 +702,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     // Lower bound was 3 for a long time; the Grand Tour's Callisto stop needs
     // to sit intimately close to a 0.38-unit moon, so it is now 1.2. (3 was
     // never a "don't fly inside a body" guard anyway — the Sun's radius is
-    // 6.5.) Upper bound covers the Grand Tour's deep-space opening at ~560.
-    camSpherical.radius = Math.max(1.2, Math.min(700, camSpherical.radius));
+    // 6.5.) The upper bound clears the Oort Cloud opening.
+    camSpherical.radius = Math.max(1.2, Math.min(MAX_CAMERA_DISTANCE, camSpherical.radius));
     const offset = new THREE.Vector3().setFromSpherical(camSpherical);
     camera.position.copy(controlsTarget).add(offset);
     camera.lookAt(controlsTarget);
@@ -824,6 +965,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function getDataByKey(key) {
     if (key === "sun") return SUN;
+    const spaceObject = SPACE_OBJECTS.find((object) => object.key === key);
+    if (spaceObject) return spaceObject;
     for (const obj of planetObjects) {
       if (obj.data.key === key) return obj.data;
       const moons = obj.data.moons || (obj.data.moon ? [obj.data.moon] : []);
@@ -840,8 +983,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     const selectable = [
       sunMesh,
       ...planetObjects.flatMap((o) => [o.mesh, ...o.moonMeshes]),
+      ...spaceObjects.map((object) => object.root),
     ];
-    const intersects = raycaster.intersectObjects(selectable, false);
+    const intersects = raycaster.intersectObjects(selectable, true);
     if (intersects.length > 0) {
       const key = intersects[0].object.userData.dataKey;
       selectPlanet(key, true);
@@ -988,6 +1132,8 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function getWorldPositionForKey(key) {
     if (key === "sun") return new THREE.Vector3(0, 0, 0);
+    const spaceObject = spaceObjects.find((object) => object.data.key === key);
+    if (spaceObject) return spaceObject.root.getWorldPosition(new THREE.Vector3());
     const obj = planetObjects.find((o) => o.data.key === key);
     if (obj) {
       const worldPos = new THREE.Vector3();
@@ -1098,11 +1244,12 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   function flyCameraToKey(key, durationScale, opts) {
     const data = getDataByKey(key);
-    const radius = data.radius || 3;
+    const radius = data.radius || data.focusDistance || 3;
     // Sub-unit bodies (the dwarf planets) need a much closer stop than the
     // radius x 5 / 8-unit floor used for planets, or the tour and click-to-
     // select would frame Ceres and Pluto as barely-visible dots.
-    const viewDist = radius < 1 ? Math.max(radius * 14, 3.5) : Math.max(radius * 5, 8);
+    const viewDist = data.viewDistance
+      || (radius < 1 ? Math.max(radius * 14, 3.5) : Math.max(radius * 5, 8));
     flyCameraTo(
       () => getWorldPositionForKey(key),
       viewDist,
@@ -1263,6 +1410,15 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       });
       bodySelect.appendChild(group);
     });
+    const spaceGroup = document.createElement("optgroup");
+    spaceGroup.label = "Space objects";
+    SPACE_OBJECTS.forEach((object) => {
+      const option = document.createElement("option");
+      option.value = object.key;
+      option.textContent = object.name;
+      spaceGroup.appendChild(option);
+    });
+    bodySelect.appendChild(spaceGroup);
     bodySelect.addEventListener("change", () => {
       if (bodySelect.value) selectPlanet(bodySelect.value, true);
       bodySelect.value = "";
@@ -1304,6 +1460,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
         .map((moon) => moon.key),
     ])],
     moons: moonBodies.map((moon) => moon.key),
+    space: SPACE_OBJECTS.map((object) => object.key),
     inner: ["mercury", "venus", "earth", "mars"],
     outer: ["jupiter", "saturn", "uranus", "neptune"],
     dwarf: PLANETS.filter((p) => p.dwarf).map((p) => p.key),
@@ -1387,24 +1544,45 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       .add(new THREE.Vector3(0, 18, 0));
   }
 
+  function spaceObjectFlybyTarget(key, direction) {
+    return getWorldPositionForKey(key).clone().add(direction.clone().normalize().multiplyScalar(4));
+  }
+
   const GRAND_TOUR = [
     {
-      // Cold open: a single bright point in a lot of black. Snapped, because
-      // this is frame one of the piece, then given a slow drift inward so
-      // the shot is alive rather than a static plate.
-      label: "A faint star in the dark…",
+      // A deliberately compressed Oort Cloud shell, far beyond the planets.
+      label: "The Oort Cloud",
       snap: true,
       target: () => new THREE.Vector3(0, 0, 0),
-      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.44),
-      distance: OVERVIEW_DISTANCE * 2.95,
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.36),
+      distance: OORT_CLOUD_CAMERA_DISTANCE,
       follow: false,
     },
     {
-      label: "…and it has planets.",
+      label: "A frozen shell around the Sun",
       target: () => new THREE.Vector3(0, 0, 0),
-      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.4),
-      distance: OVERVIEW_DISTANCE * 2.55,
-      duration: 5200,
+      dir: () => sunRelativeDir(new THREE.Vector3(), 0.9, 1.34),
+      distance: 1040,
+      duration: 7000,
+      ease: easeInOutQuint,
+      dwell: 0.7,
+      follow: false,
+    },
+    {
+      key: "voyager-1",
+      label: "Voyager 1",
+      dir: () => sunRelativeDir(getWorldPositionForKey("voyager-1"), -0.55, 1.2),
+      distance: 2.7,
+      duration: 9000,
+      ease: easeInOutQuint,
+      dwell: 1.0,
+    },
+    {
+      label: "Past the farthest human-made craft",
+      target: () => spaceObjectFlybyTarget("voyager-1", new THREE.Vector3(-1, 0.2, 0.7)),
+      dir: () => new THREE.Vector3(0.7, 0.18, -1),
+      distance: 5.4,
+      duration: 6500,
       ease: easeInOutQuint,
       dwell: 0.35,
       follow: false,
@@ -1466,6 +1644,49 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
       distance: 5.0,
       duration: 5600,
       dwell: 1.4,
+    },
+    {
+      key: "iss",
+      label: "International Space Station",
+      dir: () => sunRelativeDir(getWorldPositionForKey("iss"), -0.65, 1.16),
+      distance: 4.8,
+      duration: 4600,
+      dwell: 0.8,
+    },
+    {
+      key: "hubble",
+      label: "Hubble Space Telescope",
+      dir: () => sunRelativeDir(getWorldPositionForKey("hubble"), 0.75, 1.22),
+      distance: 4.6,
+      duration: 4400,
+      dwell: 0.8,
+    },
+    {
+      key: "jwst",
+      label: "James Webb Space Telescope",
+      dir: () => sunRelativeDir(getWorldPositionForKey("jwst"), 0.72, 1.16),
+      distance: 4.8,
+      duration: 6200,
+      ease: easeInOutQuint,
+      dwell: 1.0,
+    },
+    {
+      label: "A quiet halo beyond Earth",
+      target: () => spaceObjectFlybyTarget("jwst", new THREE.Vector3(0.8, 0.2, -0.6)),
+      dir: () => new THREE.Vector3(-0.8, 0.22, 0.6),
+      distance: 4.4,
+      duration: 5200,
+      ease: easeInOutQuint,
+      dwell: 0.35,
+      follow: false,
+    },
+    {
+      key: "roman",
+      label: "Nancy Grace Roman Space Telescope",
+      dir: () => sunRelativeDir(getWorldPositionForKey("roman"), -0.72, 1.2),
+      distance: 4.5,
+      duration: 4600,
+      dwell: 0.8,
     },
     {
       key: "moon",
@@ -2350,6 +2571,9 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   // Draws the frame: bloom-only pass first, then the composited full scene.
   function renderFrame() {
+    if (oortCloud) {
+      oortCloud.visible = camera.position.length() >= OORT_CLOUD_INNER_RADIUS;
+    }
     scene.traverse(darkenNonBloomed);
     bloomComposer.render();
     restoreMaterials();
@@ -2429,6 +2653,28 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
           moonPivot.rotation.y += ((m && m.orbitSpeed) || 5)
             * ORBIT_TIME_SCALE * MOON_ORBIT_TIME_SCALE * systemMotionScale * dt;
         });
+      }
+    });
+
+    spaceObjects.forEach((object) => {
+      const { data, root, orbit } = object;
+      object.phase += (data.orbitSpeed || 0) * dt;
+      if (data.placement === "low-earth-orbit") {
+        orbit.rotation.y = object.phase;
+        root.lookAt(0, 0, 0);
+      } else if (data.placement === "sun-earth-l2") {
+        const earthPosition = getWorldPositionForKey("earth");
+        const awayFromSun = earthPosition.clone().normalize();
+        orbit.position.copy(earthPosition).addScaledVector(awayFromSun, data.l2Distance);
+        root.position.set(
+          Math.cos(object.phase) * data.orbitRadius,
+          Math.sin(object.phase * 2) * data.orbitRadius * 0.35,
+          Math.sin(object.phase) * data.orbitRadius
+        );
+        root.rotation.y += 0.1 * dt;
+      } else if (data.placement === "outbound") {
+        root.position.addScaledVector(new THREE.Vector3().fromArray(data.drift), dt * 0.02);
+        root.rotation.y += 0.08 * dt;
       }
     });
 

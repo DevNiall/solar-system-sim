@@ -34,6 +34,8 @@ npm run preview   # optional: serve the built dist/ output locally
 - Earth gets a day-map, specular map (oceans reflect more than land), and an additive cloud layer; Saturn gets a real translucent ring texture.
 - A real bloom halo on the Sun: `UnrealBloomPass` through an `EffectComposer`, applied *selectively* (only objects on the bloom layer are drawn into the bloom pass) so the star glows without smearing the planets, orbit rings, or starfield.
 - Starfield background: procedural points plus a real Milky Way skybox texture.
+- **Oort Cloud opening**: a dense, separately compressed cinematic shell of icy points surrounding the system at the start of the Grand Tour.
+- **Space objects**: selectable realistic NASA models of Voyager 1 and 2, James Webb Space Telescope, Hubble Space Telescope, the International Space Station, and the planned Nancy Grace Roman Space Telescope. The Space Objects Tour visits them all; Grand Tour includes flybys of Voyager 1 and JWST.
 - Free camera controls: left-drag to orbit, right-drag to pan, scroll to zoom. On touch devices: one finger to orbit, pinch to zoom, tap a body to select it.
 - **Works on phones and tablets**: the whole UI is responsive. On small screens the info panel becomes a bottom sheet (a side sheet in landscape, where vertical space is scarce), the tour bar spans the width so every control stays on screen, and both modals fit the viewport and scroll internally. Touch devices also get larger, finger-sized tap targets. The desktop layout is unchanged.
 - Click any body to open an info panel with real astronomical facts (diameter, day/year length, moons, fun facts).
@@ -45,12 +47,15 @@ npm run preview   # optional: serve the built dist/ output locally
 
 Real diffuse texture maps (plus Earth's cloud/specular layers and Saturn's ring alpha texture) are from [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). They're committed locally under `public/textures/` (not hot-linked) so the app doesn't depend on a third-party image host staying up. If any texture fails to load for any reason, materials gracefully fall back to their solid base color — the app never crashes or shows a broken-image icon.
 
+Spacecraft and telescope models are from [NASA 3D Resources](https://github.com/nasa/NASA-3D-Resources). NASA is acknowledged as the source; this simulation is not endorsed by NASA.
+
 ## Deliberate scale/accuracy tradeoffs
 
 This simulator intentionally is **not to scale**, and says so in the UI:
 
 - **Planet sizes** are exaggerated (especially the smaller inner planets) relative to the Sun so they remain visible — in reality the Sun is ~109x Earth's diameter, which would render most planets as invisible specks.
 - **Orbital distances** use a compressed layout that squeezes each successive gap harder the further out it is, so the whole system (Mercury through Pluto) fits in one viewport without needing the camera to travel astronomical (pun intended) distances. The full table, the reasoning, and the two clearance constraints any future edit must preserve are documented in the header comment of `src/data.js`.
+- The **Oort Cloud** and human-made craft use a separate, cinematic placement scale. The Oort Cloud is represented by a compressed dense shell even though its real extent begins far beyond the Kuiper Belt; spacecraft paths are explanatory rather than live ephemerides.
 - **Orbital speeds** preserve the *relative* ordering from real physics (inner planets orbit much faster than outer ones, consistent with Kepler's third law) but are scaled up dramatically for visible motion — they are not in true proportion to each other beyond ordering/relative ratios.
 - Axial tilts and orbital inclinations are **not** simplified — see "What is accurate" below. Only the largest/best-known moons are modelled (Earth's Moon; Mars' Phobos & Deimos; Jupiter's four Galilean moons; Saturn's Titan & Enceladus). Moon sizes, orbital distances, and orbit speeds are exaggerated even more aggressively than the planets' — real moons would be sub-pixel specks hugging their planet — though relative ordering within each moon system (largest moon, fastest orbit) is kept true to life. Because moons use a more exaggerated size scale than planets do, a large moon such as Titan can look bigger on screen than the dwarf planet Ceres.
 - The **asteroid belt** sits at the real belt's distance, but its particles are drawn vastly larger than real asteroids and far more densely packed — the real belt is mostly empty space, and spacecraft cross it without going anywhere near a rock. Its vertical spread is also flattened (about 4° at the belt's mid-radius, against the real belt's rather wider dispersion).
@@ -70,6 +75,7 @@ All non-geometric facts presented in the info panels (diameters, day/year length
 
 - `index.html` — page markup, UI panels (info panel, tour bar, about modal), and the Vite entry `<script type="module">` tag.
 - `src/data.js` — Sun/planet/dwarf-planet/moon data and the asteroid belt config: visual parameters (color, compressed size/distance/speed, texture paths) and real astronomical facts. Its header comment is the authoritative reference for the distance scale.
+- `public/models/` — NASA spacecraft and telescope GLB models, loaded with fallback craft geometry if an asset cannot load.
 - `src/quiz.js` — data-driven flashcard generation from the `stats`/`tagline`/`facts` fields in `data.js`.
 - `src/app.js` — Three.js scene setup, texture loading (with fallback), custom camera controls (orbit/pan/zoom), raycasting/selection, and the guided tour state machine (including live camera tracking of moving targets).
 - `public/textures/` — committed CC-BY 4.0 texture maps (see Textures section above), served as-is by Vite from the project root.

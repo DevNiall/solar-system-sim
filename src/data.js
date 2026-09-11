@@ -175,6 +175,116 @@ const ASTEROID_BELT = {
   driftSpeed: 0.22,
 };
 
+// Human-made spacecraft and telescopes use their own deliberately compressed
+// locations and paths. They are not celestial bodies, so they stay outside
+// PLANETS and do not affect the solar-system scale, quiz, or planet tours.
+const SPACE_OBJECTS = [
+  {
+    key: "iss",
+    name: "International Space Station",
+    color: 0xe5edf5,
+    model: "models/iss.glb",
+    placement: "low-earth-orbit",
+    visualSize: 1.4,
+    viewDistance: 5.5,
+    orbitRadius: 2.4,
+    orbitSpeed: 0.18,
+    tagline: "A permanent human laboratory circling Earth.",
+    stats: { "Orbit": "Low Earth orbit", "Altitude": "About 400 km", "Crew": "Usually seven people" },
+    facts: [
+      "The International Space Station has been continuously inhabited since 2000.",
+      "It circles Earth about once every 90 minutes at roughly 28,000 km/h.",
+    ],
+  },
+  {
+    key: "hubble",
+    name: "Hubble Space Telescope",
+    color: 0xa9c9e5,
+    model: "models/hubble.glb",
+    placement: "low-earth-orbit",
+    visualSize: 1.1,
+    viewDistance: 4.8,
+    orbitRadius: 3.1,
+    orbitSpeed: 0.12,
+    tagline: "The observatory that transformed our view of the universe.",
+    stats: { "Orbit": "Low Earth orbit", "Altitude": "About 540 km", "Launched": "1990" },
+    facts: [
+      "Hubble observes the universe in ultraviolet, visible, and near-infrared light.",
+      "Space Shuttle crews visited Hubble five times to upgrade and repair it.",
+    ],
+  },
+  {
+    key: "jwst",
+    name: "James Webb Space Telescope",
+    color: 0xd8b86c,
+    model: "models/jwst.glb",
+    placement: "sun-earth-l2",
+    visualSize: 1.3,
+    viewDistance: 5.2,
+    l2Distance: 7.5,
+    orbitRadius: 1.4,
+    orbitSpeed: 0.035,
+    tagline: "A gold-mirrored infrared observatory at the Sun-Earth L2 point.",
+    stats: { "Orbit": "Sun-Earth L2 halo orbit", "Distance from Earth": "About 1.5 million km", "Launched": "2021" },
+    facts: [
+      "Webb studies the universe in infrared light, allowing it to see distant early galaxies and dust-shrouded stars.",
+      "Its tennis-court-sized sunshield keeps the telescope cold enough to detect faint infrared light.",
+    ],
+  },
+  {
+    key: "roman",
+    name: "Nancy Grace Roman Space Telescope",
+    color: 0x8eb8d8,
+    model: "models/roman.glb",
+    placement: "sun-earth-l2",
+    visualSize: 1.1,
+    viewDistance: 4.8,
+    l2Distance: 8.7,
+    orbitRadius: 1.1,
+    orbitSpeed: 0.028,
+    tagline: "NASA's planned wide-field infrared survey observatory.",
+    stats: { "Status": "Planned mission", "Orbit": "Sun-Earth L2 halo orbit", "Primary mirror": "2.4 m" },
+    facts: [
+      "Roman will survey a region of sky about 100 times larger than Hubble can see in a single view.",
+      "Its science program includes studying dark energy, exoplanets, and the structure of the universe.",
+    ],
+  },
+  {
+    key: "voyager-1",
+    name: "Voyager 1",
+    color: 0xd7c29b,
+    model: "models/voyager.glb",
+    placement: "outbound",
+    visualSize: 1.2,
+    viewDistance: 2.4,
+    position: [178, 36, -116],
+    drift: [0.16, 0.025, -0.1],
+    tagline: "The most distant human-made object, exploring interstellar space.",
+    stats: { "Launched": "1977", "Mission": "Interstellar space", "Distance": "More than 24 billion km from Earth" },
+    facts: [
+      "Voyager 1 entered interstellar space in 2012 after crossing the heliopause.",
+      "It carries a Golden Record with sounds and images chosen to represent life on Earth.",
+    ],
+  },
+  {
+    key: "voyager-2",
+    name: "Voyager 2",
+    color: 0xcbb78e,
+    model: "models/voyager.glb",
+    placement: "outbound",
+    visualSize: 1.2,
+    viewDistance: 2.4,
+    position: [-152, -24, 142],
+    drift: [-0.13, -0.02, 0.12],
+    tagline: "The only spacecraft to have flown past Uranus and Neptune.",
+    stats: { "Launched": "1977", "Mission": "Interstellar space", "Distance": "More than 20 billion km from Earth" },
+    facts: [
+      "Voyager 2 is the only spacecraft to have visited all four giant planets.",
+      "It entered interstellar space in 2018 and continues to send back data.",
+    ],
+  },
+];
+
 // Order matters — also defines tour order, so entries are kept in order of
 // increasing distance from the Sun (which puts Ceres in the belt between Mars
 // and Jupiter, and Pluto last).
@@ -661,4 +771,4 @@ const PLANETS = [
   },
 ];
 
-export { TEXTURES, SUN, PLANETS, ASTEROID_BELT };
+export { TEXTURES, SUN, PLANETS, ASTEROID_BELT, SPACE_OBJECTS };
