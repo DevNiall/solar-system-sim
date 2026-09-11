@@ -56,6 +56,12 @@ const STAT_TEMPLATES = [
   },
 ];
 
+function bodyTheme(body, planets) {
+  if (body.key === "sun") return "sun";
+  if (planets.some((planet) => planet.key === body.key)) return "planets";
+  return "moons";
+}
+
 /**
  * Generate a flat, shuffle-able list of { question, answer } flashcards
  * from the Sun and planet data objects.
@@ -75,11 +81,12 @@ function generateQuizQuestions(sun, planets) {
 
   for (const body of bodies) {
     const stats = body.stats || {};
+    const theme = bodyTheme(body, planets);
 
     for (const tmpl of STAT_TEMPLATES) {
       const value = stats[tmpl.key];
       if (value) {
-        cards.push({ question: tmpl.question(body.name), answer: value });
+        cards.push({ question: tmpl.question(body.name), answer: value, theme });
       }
     }
 
@@ -87,6 +94,7 @@ function generateQuizQuestions(sun, planets) {
       cards.push({
         question: `What is ${body.name} known for?`,
         answer: body.tagline,
+        theme,
       });
     }
 
@@ -95,6 +103,7 @@ function generateQuizQuestions(sun, planets) {
       cards.push({
         question: `Tell me an interesting fact about ${body.name}.`,
         answer: fact,
+        theme,
       });
     }
   }
@@ -103,6 +112,7 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which bodies in this simulation are dwarf planets rather than full planets?",
       answer: dwarfPlanets.map((p) => p.name).join(" and "),
+      theme: "planets",
     });
   }
 
@@ -117,6 +127,7 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet has the most known moons?",
       answer: `${most.name} (${most.moons} known moons)`,
+      theme: "comparisons",
     });
   }
 
@@ -129,10 +140,12 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet is the largest (biggest diameter)?",
       answer: biggest.name,
+      theme: "comparisons",
     });
     cards.push({
       question: "Which planet is the smallest?",
       answer: smallest.name,
+      theme: "comparisons",
     });
   }
 
@@ -145,10 +158,12 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet takes the longest to orbit the Sun?",
       answer: longest.name,
+      theme: "comparisons",
     });
     cards.push({
       question: "Which planet orbits the Sun the fastest (shortest year)?",
       answer: shortest.name,
+      theme: "comparisons",
     });
   }
 
@@ -161,10 +176,12 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet spins fastest (shortest day)?",
       answer: spinsFastest.name,
+      theme: "comparisons",
     });
     cards.push({
       question: "Which planet has the longest day?",
       answer: spinsSlowest.name,
+      theme: "comparisons",
     });
   }
 
@@ -183,10 +200,12 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "Which planet is tipped over the most, spinning almost on its side?",
       answer: `${mostTilted.name} — its axis leans about ${Math.round(mostTilted.off)}° away from upright.`,
+      theme: "comparisons",
     });
     cards.push({
       question: "Which planet spins almost perfectly upright, with no seasons to speak of?",
       answer: leastTilted.name,
+      theme: "comparisons",
     });
   }
 
@@ -198,6 +217,7 @@ function generateQuizQuestions(sun, planets) {
     cards.push({
       question: "The eight planets orbit in almost the same flat plane. Which one strays furthest out of it?",
       answer: `${steepest.name}, whose orbit is tilted about ${steepest.inc}° to Earth's.`,
+      theme: "comparisons",
     });
   }
 
@@ -213,4 +233,9 @@ function shuffle(array) {
   return arr;
 }
 
-export { generateQuizQuestions, shuffle };
+function buildQuizRound(cards, theme, count) {
+  const pool = theme === "random" ? cards : cards.filter((card) => card.theme === theme);
+  return shuffle(pool).slice(0, Math.min(count || pool.length, pool.length));
+}
+
+export { buildQuizRound, generateQuizQuestions, shuffle };

@@ -76,6 +76,16 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 4px;
+    border: 1px solid rgba(120, 150, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(8, 12, 28, 0.38);
+  }
+  #browseToursBtn { font-weight: 700; }
+  .utility-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   button.pill {
@@ -439,6 +449,30 @@
     gap: 8px;
     flex-wrap: wrap;
   }
+  .quiz-rounds {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .quiz-round {
+    min-height: 72px;
+    padding: 12px;
+    border: 1px solid rgba(120, 150, 255, 0.3);
+    border-radius: 8px;
+    background: rgba(30, 40, 70, 0.42);
+    color: #e8ecf7;
+    cursor: pointer;
+    text-align: left;
+  }
+  .quiz-round:hover { background: rgba(70, 100, 190, 0.7); }
+  .quiz-round strong, .quiz-round span { display: block; }
+  .quiz-round strong { font-size: 13px; }
+  .quiz-round span { margin-top: 3px; color: #9aa4c7; font-size: 11px; line-height: 1.3; }
+  .quiz-round.random { background: rgba(255, 175, 60, 0.82); border-color: rgba(255, 200, 120, 0.7); color: #241a04; }
+  .quiz-round.random span { color: #5b420d; }
+  .quiz-play { display: none; }
+  .quiz-play.visible { display: block; }
+  .quiz-round-picker.hidden { display: none; }
 
   #tourPickerModal {
     position: absolute;
@@ -621,7 +655,7 @@
     #controls { max-width: none; justify-content: flex-start; }
     .wide-only { display: none; }
     #hint { display: none; }
-    .tour-group { flex-wrap: wrap; }
+    .tour-group, .utility-group { flex-wrap: wrap; }
     /* the controls stack into narrow rows here, so a left border would read
        as clutter rather than as a group separator */
     .control-group { padding-left: 0; border-left: none; }
@@ -680,6 +714,7 @@
 
     #aboutModal, #quizModal { padding: 12px; }
     #aboutModal .box-body, #quizModal .box-body { padding: 20px 18px; }
+    .quiz-rounds { grid-template-columns: 1fr; }
     #tourPickerModal { padding: 12px; }
     #tourPickerModal .box-body { padding: 20px 18px 14px; }
     .tour-picker-footer { padding: 12px 18px 18px; }
@@ -741,6 +776,7 @@
     </div>
     <div id="controls">
       <span class="tour-group tour-setup">
+        <button class="pill primary" id="browseToursBtn" title="Browse visual tour previews">✦ Browse Tours</button>
         <select class="pill" id="tourScope" title="Tour scope">
           <option value="grand" selected>✦ Grand Tour</option>
           <option value="full">Full Tour</option>
@@ -750,21 +786,22 @@
           <option value="outer">Outer Planets</option>
           <option value="dwarf">Dwarf Planets</option>
         </select>
-        <button class="pill primary" id="tourBtn">▶ Start Tour</button>
+        <button class="pill" id="tourBtn">▶ Start</button>
         <select class="pill" id="tourSpeed" title="Tour pace — how long the camera lingers at each stop">
           <option value="relaxed">Relaxed</option>
           <option value="normal" selected>Normal</option>
           <option value="quick">Quick</option>
         </select>
       </span>
-      <button class="pill" id="browseToursBtn" title="Browse visual tour previews">Browse Tours</button>
       <select class="pill" id="bodySelect" aria-label="Go to a celestial body" title="Go to a celestial body">
         <option value="" selected>Go to body...</option>
       </select>
-      <button class="pill" id="resetBtn">Reset View</button>
-      <button class="pill" id="fullscreenBtn" title="Toggle fullscreen">⛶ Fullscreen</button>
-      <button class="pill toggled" id="musicBtn" aria-pressed="true" title="Toggle background music">♫ Music On</button>
-      <button class="pill" id="quizBtn">🧠 Quiz</button>
+      <span class="utility-group">
+        <button class="pill" id="resetBtn">Reset View</button>
+        <button class="pill" id="fullscreenBtn" title="Toggle fullscreen">⛶ Fullscreen</button>
+        <button class="pill toggled" id="musicBtn" aria-pressed="true" title="Toggle background music">♫ Music On</button>
+        <button class="pill" id="quizBtn">🧠 Quiz</button>
+      </span>
       <span class="control-group">
         <button
           class="pill"
@@ -817,15 +854,20 @@
       <button class="closeBtn" id="quizCloseBtn" aria-label="Close quiz">×</button>
       <div class="box-body">
         <h2>Solar System Quiz</h2>
-        <p class="quizProgress" id="quizProgress"></p>
-        <div class="quizCard">
-          <p class="quizQuestion" id="quizQuestion"></p>
-          <p class="quizAnswer" id="quizAnswer"></p>
+        <div class="quiz-round-picker" id="quizRoundPicker">
+          <div class="quiz-rounds" id="quizRounds"></div>
         </div>
-        <div class="quizActions">
-          <button class="pill primary" id="quizRevealBtn">Reveal answer</button>
-          <button class="pill" id="quizNextBtn">Next ⏭</button>
-          <button class="pill" id="quizExitBtn">✕ Exit<span class="wide-only"> Quiz</span></button>
+        <div class="quiz-play" id="quizPlay">
+          <p class="quizProgress" id="quizProgress"></p>
+          <div class="quizCard">
+            <p class="quizQuestion" id="quizQuestion"></p>
+            <p class="quizAnswer" id="quizAnswer"></p>
+          </div>
+          <div class="quizActions">
+            <button class="pill primary" id="quizRevealBtn">Reveal answer</button>
+            <button class="pill" id="quizNextBtn">Next ⏭</button>
+            <button class="pill" id="quizExitBtn">✕ Rounds</button>
+          </div>
         </div>
       </div>
     </div>

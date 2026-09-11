@@ -11,7 +11,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TEXTURES, SUN, PLANETS, ASTEROID_BELT, SPACE_OBJECTS } from "./data.js";
-import { generateQuizQuestions, shuffle } from "./quiz.js";
+import { buildQuizRound, generateQuizQuestions, shuffle } from "./quiz.js";
 
 (function () {
   "use strict";
@@ -2473,9 +2473,21 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
   const quizRevealBtn = document.getElementById("quizRevealBtn");
   const quizNextBtn = document.getElementById("quizNextBtn");
   const quizExitBtn = document.getElementById("quizExitBtn");
+  const quizRoundPicker = document.getElementById("quizRoundPicker");
+  const quizRounds = document.getElementById("quizRounds");
+  const quizPlay = document.getElementById("quizPlay");
+
+  const QUIZ_ROUNDS = [
+    { key: "random", name: "Random Round", detail: "12 cards from across the Solar System", className: "random" },
+    { key: "sun", name: "Sun", detail: "Our star and its role in the system" },
+    { key: "planets", name: "Planets", detail: "Worlds, dwarf planets, and their traits" },
+    { key: "moons", name: "Moons", detail: "Companions from Phobos to Charon" },
+    { key: "comparisons", name: "Compare", detail: "Biggest, fastest, tilted, and more" },
+  ];
 
   const quizState = {
     cards: [],
+    allCards: [],
     index: 0,
     revealed: false,
   };
@@ -2489,17 +2501,38 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
     quizProgress.textContent = `Card ${quizState.index + 1} of ${quizState.cards.length}`;
   }
 
-  function openQuiz() {
-    if (quizState.cards.length === 0) {
-      quizState.cards = shuffle(generateQuizQuestions(SUN, PLANETS));
+  function showQuizRoundPicker() {
+    if (quizState.allCards.length === 0) {
+      quizState.allCards = generateQuizQuestions(SUN, PLANETS);
     }
+    quizRounds.replaceChildren();
+    QUIZ_ROUNDS.forEach((round) => {
+      const button = document.createElement("button");
+      button.className = `quiz-round${round.className ? ` ${round.className}` : ""}`;
+      button.innerHTML = `<strong>${round.name}</strong><span>${round.detail}</span>`;
+      button.addEventListener("click", () => startQuizRound(round.key));
+      quizRounds.appendChild(button);
+    });
+    quizRoundPicker.classList.remove("hidden");
+    quizPlay.classList.remove("visible");
+  }
+
+  function startQuizRound(theme) {
+    quizState.cards = buildQuizRound(quizState.allCards, theme, 12);
     quizState.index = 0;
+    quizRoundPicker.classList.add("hidden");
+    quizPlay.classList.add("visible");
     showQuizCard();
+  }
+
+  function openQuiz() {
+    showQuizRoundPicker();
     quizModal.classList.add("visible");
   }
 
   function closeQuiz() {
     quizModal.classList.remove("visible");
+    quizPlay.classList.remove("visible");
   }
 
   function revealQuizAnswer() {
@@ -2515,7 +2548,7 @@ import { generateQuizQuestions, shuffle } from "./quiz.js";
 
   quizBtn.addEventListener("click", openQuiz);
   quizCloseBtn.addEventListener("click", closeQuiz);
-  quizExitBtn.addEventListener("click", closeQuiz);
+  quizExitBtn.addEventListener("click", showQuizRoundPicker);
   quizRevealBtn.addEventListener("click", revealQuizAnswer);
   quizNextBtn.addEventListener("click", nextQuizCard);
   quizModal.addEventListener("click", (e) => {
