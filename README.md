@@ -1,10 +1,10 @@
 # Solar System Simulator
 
-![Guided flyby tour demo](public/media/demo.gif)
+![Guided flyby tour demo](public/media/demo.webp)
 
 **[Live demo](https://devniall.github.io/solar-system-sim/)**
 
-A dependency-light, WebGL solar system visualizer built with [Three.js](https://threejs.org/) (via npm, bundled with [Vite](https://vitejs.dev/)). Designed as an educational tool for high-school-level astronomy: explore the Sun, all eight planets, the asteroid belt, and the dwarf planets Ceres and Pluto, click on any body for real facts, and take a guided cinematic tour of the whole system.
+A dependency-light, WebGL solar system visualizer built with [Three.js](https://threejs.org/) (via npm, bundled with [Vite](https://vitejs.dev/)). Designed as an educational tool for high-school-level astronomy: explore planets, moons, spacecraft, and telescopes; inspect facts; and take guided or cinematic tours through the system.
 
 ## Running locally
 
@@ -30,17 +30,21 @@ npm run preview   # optional: serve the built dist/ output locally
 - **Real axial tilts and orbital inclinations** for every body (no exaggeration): Uranus rolls on its side, Venus is flipped upside-down, Saturn's rings tip with its 26.7° obliquity, and each orbit — ring included — sits in its own inclined plane at its real ascending node. See the accuracy section below.
 - Two dwarf planets: **Ceres**, orbiting inside the asteroid belt, and **Pluto** (with its outsized moon Charon) beyond Neptune. Both are ordinary entries in the `PLANETS` array, so they pick up orbit rings, click-to-select, the info panel, the guided tour, the quiz, and deep links automatically. Their steeply inclined orbits (10.6° and 17.2°) are among the things that distinguish them, and are drawn at full strength.
 - **Asteroid belt** between Mars and Jupiter: a procedural field of ~1200 particles scattered through a flattened annulus, rendered as a single `THREE.Points` cloud (one draw call) and rotated as one rigid object. It is deliberately decorative — not a thousand individually simulated bodies.
-- Moons for Earth, Mars, Jupiter, and Saturn (the Moon; Phobos & Deimos; Io, Europa, Ganymede & Callisto; Enceladus & Titan), each orbiting its planet at its own relative speed.
+- Selectable moons for Earth, Mars, Jupiter, Saturn, and Pluto (the Moon; Phobos & Deimos; Io, Europa, Ganymede & Callisto; Enceladus & Titan; Charon), each with its own facts, textures, deep link, and focused camera view.
 - Earth gets a day-map, specular map (oceans reflect more than land), and an additive cloud layer; Saturn gets a real translucent ring texture.
 - A real bloom halo on the Sun: `UnrealBloomPass` through an `EffectComposer`, applied *selectively* (only objects on the bloom layer are drawn into the bloom pass) so the star glows without smearing the planets, orbit rings, or starfield.
 - Starfield background: procedural points plus a real Milky Way skybox texture.
 - **Oort Cloud opening**: a dense, separately compressed cinematic shell of icy points surrounding the system at the start of the Grand Tour.
-- **Space objects**: selectable realistic NASA models of Voyager 1 and 2, James Webb Space Telescope, Hubble Space Telescope, the International Space Station, and the planned Nancy Grace Roman Space Telescope. The Space Objects Tour visits them all; Grand Tour includes flybys of Voyager 1 and JWST.
-- Free camera controls: left-drag to orbit, right-drag to pan, scroll to zoom. On touch devices: one finger to orbit, pinch to zoom, tap a body to select it.
+- **Space objects**: selectable realistic NASA models of Voyager 1 and 2, James Webb Space Telescope, Hubble Space Telescope, the International Space Station, and the planned Nancy Grace Roman Space Telescope. Space Objects Tour visits them all; Grand Tour includes a silent Voyager 1 flyby.
+- **Tour navigation**: Browse Tours opens a visual carousel for Grand, Full, Moon, Space Objects, Inner, Outer, and Dwarf routes. The scope picker remains available for direct selection, and the slim segmented timeline lets you jump between tour stops.
+- **Free camera controls**: left-drag or arrow keys orbit the current pivot; right-drag pans; scroll zooms. With no focused body, `W`/`A`/`S`/`D` fly forward/back and strafe. A focused body stays centered while you orbit it; clicking empty space breaks that lock. On touch devices, one finger orbits, pinch zooms, and tap selects.
+- **Body selector and deep links**: the Go to body picker groups moons under their planet and includes spacecraft; focused bodies update the `?body=` URL for sharing.
+- **Themed quiz rounds**: choose Sun, Planets, Moons, or Compare rounds, or start a 12-card Random Round. Cards remain unscored and can be revealed one at a time.
+- **Sound and presentation**: background music starts by default, crossfading to the tour track during guided tours. A fullscreen control is available where the browser supports it.
 - **Works on phones and tablets**: the whole UI is responsive. On small screens the info panel becomes a bottom sheet (a side sheet in landscape, where vertical space is scarce), the tour bar spans the width so every control stays on screen, and both modals fit the viewport and scroll internally. Touch devices also get larger, finger-sized tap targets. The desktop layout is unchanged.
 - Click any body to open an info panel with real astronomical facts (diameter, day/year length, moons, fun facts).
-- **Guided tour**: click "Start Tour" to fly smoothly from the Sun out through every body in distance order (which places Ceres inside the belt and Pluto last). Scope can be narrowed to the inner planets, the outer planets, or just the dwarf planets, pausing at each to show its facts. The camera continuously tracks each planet's live (still-orbiting) position — both mid-flight and for the whole pause at a stop — so it never drifts off target. Use the tour bar to go to the Previous/Next stop, Pause/Resume, or Exit back to free exploration at any time. The tour bar's Pause holds only the tour, leaving the planets orbiting; the topbar's Pause freezes the planets *and* holds the tour with them, so the camera never tours a frozen solar system.
-- **Playback speed controls**: a Pause/Play button freezes every orbit, spin, and moon (the camera stays fully live, so you can keep flying around a frozen solar system), and a speed dropdown plays the whole simulation back at 0.25×–4×. This is a playback rate applied once to the animation loop's delta time, not an edit to any body's stored speed, so the real *relative* speeds are preserved at every setting. Pause and speed are independent of the tour's pace setting and are never reset by starting or stopping a tour.
+- **Guided tour**: routes pause after arrival so each selected body receives the full observation time. Tour pace can be changed live; changing scope safely restarts with the new route. The tour bar holds Previous, Pause/Resume, Next, Exit, and the segmented route tracker. Global simulation Pause also holds a tour in place.
+- **Playback speed controls**: a Pause/Play button freezes every orbit, spin, and spacecraft path, while the camera remains fully live. The default 1× pace is deliberately slowed for observation; 0.25×–4× changes playback without mutating the stored relative-speed data.
 - "About this simulation" panel explaining the scale tradeoffs (see below).
 
 ## Textures
@@ -57,7 +61,7 @@ This simulator intentionally is **not to scale**, and says so in the UI:
 
 - **Planet sizes** are exaggerated (especially the smaller inner planets) relative to the Sun so they remain visible — in reality the Sun is ~109x Earth's diameter, which would render most planets as invisible specks.
 - **Orbital distances** use a compressed layout that squeezes each successive gap harder the further out it is, so the whole system (Mercury through Pluto) fits in one viewport without needing the camera to travel astronomical (pun intended) distances. The full table, the reasoning, and the two clearance constraints any future edit must preserve are documented in the header comment of `src/data.js`.
-- The **Oort Cloud** and human-made craft use a separate, cinematic placement scale. The Oort Cloud is represented by a compressed dense shell even though its real extent begins far beyond the Kuiper Belt; spacecraft paths are explanatory rather than live ephemerides.
+- The **Oort Cloud** and human-made craft use a separate, cinematic placement scale. The Oort Cloud is represented by a compressed dense shell, fading away as the camera enters the inner system; spacecraft paths are explanatory rather than live ephemerides.
 - **Orbital speeds** preserve the *relative* ordering from real physics (inner planets orbit much faster than outer ones, consistent with Kepler's third law) but are scaled up dramatically for visible motion — they are not in true proportion to each other beyond ordering/relative ratios.
 - Axial tilts and orbital inclinations are **not** simplified — see "What is accurate" below. Only the largest/best-known moons are modelled (Earth's Moon; Mars' Phobos & Deimos; Jupiter's four Galilean moons; Saturn's Titan & Enceladus). Moon sizes, orbital distances, and orbit speeds are exaggerated even more aggressively than the planets' — real moons would be sub-pixel specks hugging their planet — though relative ordering within each moon system (largest moon, fastest orbit) is kept true to life. Because moons use a more exaggerated size scale than planets do, a large moon such as Titan can look bigger on screen than the dwarf planet Ceres.
 - The **asteroid belt** sits at the real belt's distance, but its particles are drawn vastly larger than real asteroids and far more densely packed — the real belt is mostly empty space, and spacecraft cross it without going anywhere near a rock. Its vertical spread is also flattened (about 4° at the belt's mid-radius, against the real belt's rather wider dispersion).
@@ -75,12 +79,11 @@ All non-geometric facts presented in the info panels (diameters, day/year length
 
 ## Project structure
 
-- `index.html` — page markup, UI panels (info panel, tour bar, about modal), and the Vite entry `<script type="module">` tag.
-- `src/data.js` — Sun/planet/dwarf-planet/moon data and the asteroid belt config: visual parameters (color, compressed size/distance/speed, texture paths) and real astronomical facts. Its header comment is the authoritative reference for the distance scale.
-- `public/models/` — NASA spacecraft and telescope GLB models, loaded with fallback craft geometry if an asset cannot load.
-- `src/quiz.js` — data-driven flashcard generation from the `stats`/`tagline`/`facts` fields in `data.js`.
-- `src/app.js` — Three.js scene setup, texture loading (with fallback), custom camera controls (orbit/pan/zoom), raycasting/selection, and the guided tour state machine (including live camera tracking of moving targets).
-- `public/textures/` — committed CC-BY 4.0 texture maps (see Textures section above), served as-is by Vite from the project root.
+- `index.html` — page markup, responsive overlays, control groups, tour picker, quiz round picker, and the Vite entry `<script type="module">` tag.
+- `src/data.js` — Sun, planet, moon, dwarf-planet, asteroid-belt, and `SPACE_OBJECTS` data: visual parameters, placements, texture paths, and astronomical facts.
+- `src/quiz.js` — data-driven flashcard generation plus themed and random-round creation.
+- `src/app.js` — Three.js scene setup, local texture/model loading with fallbacks, camera controls, selection/deep links, tours, spacecraft/Oort rendering, quiz, music, and fullscreen state.
+- `public/textures/` — local CC-BY and NASA texture maps; `public/models/` — NASA GLB craft models and local Draco decoders; `public/media/tours/` — visual tour-picker previews.
 - `vite.config.js` — Vite build config, including the `base` path required for GitHub Pages deployment.
 - `.github/workflows/deploy.yml` — builds the project and deploys `dist/` to GitHub Pages on push to `main`.
 
